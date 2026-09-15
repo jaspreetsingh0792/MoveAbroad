@@ -169,6 +169,13 @@ visa:
   require: false
   classifier: false
   classifier_model: claude-sonnet-4-6
+  # Optional list of employers licensed to sponsor, one per line or a CSV whose
+  # first column is the name. Legal forms are ignored, so "Adyen N.V." matches
+  # "Adyen". Membership is a fact about the company rather than a claim in a
+  # posting, so it outranks keyword evidence and satisfies `require` on its own.
+  # Download an official register and point at it, e.g. the Dutch IND public
+  # register of recognised sponsors. Nothing is fetched at runtime.
+  # sponsor_register: data/recognised-sponsors.txt
 
 # Soft boost in ranking (not a hard filter). Helpful when relocating from India.
 visa_keywords:
@@ -189,6 +196,8 @@ score_weights:
   keyword_hit: 3    # per include_keyword found anywhere
   remote: 4         # flat bonus for a remote role
   visa_hit: 5       # per visa_keyword found anywhere
+  sponsor_register: 7   # company is on an official sponsor register
+  visa_restricted: -8   # posting rules sponsorship out (negative on purpose)
 
 # Ceiling on how many hits of each kind still earn score, so a posting that
 # lists twenty technologies cannot outrank a well-matched role that names a
