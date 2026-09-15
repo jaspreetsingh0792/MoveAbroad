@@ -14,6 +14,12 @@ DEFAULT_SCORE_WEIGHTS: dict[str, int] = {
     "keyword_hit": 3,
     "remote": 4,
     "visa_hit": 5,
+    # Membership of an official sponsor register is company-level fact, so it
+    # outweighs anything the prose of a single posting claims.
+    "sponsor_register": 7,
+    # Negative: a posting that rules sponsorship out must rank below one that
+    # simply says nothing.
+    "visa_restricted": -8,
 }
 DEFAULT_LOCATION_WEIGHTS: dict[str, int] = {
     "netherlands": 6,
@@ -49,6 +55,7 @@ class Prefs:
     visa_require: bool = False
     visa_classifier: bool = False
     visa_classifier_model: str = "claude-sonnet-4-6"
+    sponsor_register_path: str | None = None
     seniority_allow: list[str] = field(default_factory=list)
     seniority_keep_unknown: bool = True
     max_age_days: int = 14
@@ -137,6 +144,9 @@ def prefs_from_dict(data: dict[str, Any]) -> Prefs:
         visa_require=bool(visa.get("require", False)),
         visa_classifier=bool(visa.get("classifier", False)),
         visa_classifier_model=str(visa.get("classifier_model") or "claude-sonnet-4-6"),
+        sponsor_register_path=(
+            str(visa["sponsor_register"]) if visa.get("sponsor_register") else None
+        ),
         seniority_allow=[s.lower() for s in _str_list(seniority.get("allow"))],
         seniority_keep_unknown=bool(seniority.get("keep_unknown", True)),
         max_age_days=int(data.get("max_age_days", 14)),

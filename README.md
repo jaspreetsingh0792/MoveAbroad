@@ -144,11 +144,23 @@ The sample preferences are aimed at an Indian software engineer targeting the Ne
 
 ## Visa sponsorship
 
-MoveAbroad can surface sponsorship signals from:
+MoveAbroad surfaces sponsorship signals, strongest evidence first:
 
+- **Hard restrictions**, which win over everything else. A posting saying *"we do not offer visa sponsorship"*, *"must already have the right to work"* or *"EU citizens only"* is ruled out rather than ranked. This matters because that first sentence contains the words "visa" and "sponsorship": read as keywords alone, an explicit refusal looks like evidence in favour.
+- **Sponsor registers** — an official list of employers licensed to sponsor, such as the Dutch IND public register of recognised sponsors. Membership is a fact about the company rather than a claim in one posting, so it counts as sponsorship evidence on its own.
 - Source-provided sponsorship fields
 - Visa/sponsorship keywords
 - Optional AI classification using the Anthropic API
+
+The first two are deterministic and need no API call, and a posting already ruled out never reaches the classifier.
+
+To use a register, download one and point at it. Nothing is fetched at runtime, and legal forms are ignored so `Adyen N.V.` matches `Adyen`:
+
+```bash
+moveabroad --dry-run --prefs prefs.yaml --sponsor-register data/recognised-sponsors.txt
+```
+
+One employer per line, or a CSV whose first column is the name. `visa.sponsor_register` in `prefs.yaml` does the same thing. Set `visa.require: true` to keep only jobs with sponsorship evidence.
 
 Sponsorship information is a signal, not legal or immigration advice. Always verify eligibility with the employer and official government sources.
 
@@ -184,6 +196,7 @@ src/opportunities_abroad/
   prefs.py
   models.py
   seniority.py
+  visa.py
   matcher/
   sources/
   notifiers/
