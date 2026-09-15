@@ -121,6 +121,16 @@ remote:
     - UK only
     - United Kingdom only
 
+# Visa sponsorship handling.
+#   require:    drop jobs unless the source flags sponsorship or a visa_keyword hits
+#   classifier: ask Claude to read each matched posting and judge sponsorship.
+#               Needs ANTHROPIC_API_KEY. Verdicts are cached per job, so a rerun
+#               costs nothing. Any API failure is recorded as "unclear".
+visa:
+  require: false
+  classifier: false
+  classifier_model: claude-sonnet-4-6
+
 # Soft boost in ranking (not a hard filter). Helpful when relocating from India.
 visa_keywords:
   - visa

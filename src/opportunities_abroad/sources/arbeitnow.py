@@ -73,9 +73,8 @@ class ArbeitnowSource(JobSource):
         title = (item.get("title") or "").strip()
         if not slug or not url or not title:
             return None
-        remote = item.get("remote")
-        if isinstance(remote, str):
-            remote = remote.lower() in {"true", "1", "yes", "remote"}
+        remote = _as_bool(item.get("remote"))
+        visa_sponsorship = _as_bool(item.get("visa_sponsorship"))
         posted = _parse_created(item.get("created_at") or item.get("createdAt"))
         tags = [str(t) for t in (item.get("tags") or [])]
         job_types = item.get("job_types") or item.get("job_type") or []
@@ -94,10 +93,22 @@ class ArbeitnowSource(JobSource):
             location=(item.get("location") or "").strip(),
             description=strip_html(item.get("description") or ""),
             tags=tags,
-            remote=bool(remote) if remote is not None else None,
+            remote=remote,
             posted_at=posted,
             job_type=job_type,
+            visa_sponsorship=visa_sponsorship,
         )
+
+
+def _as_bool(value: object) -> bool | None:
+    """Arbeitnow sends these flags as booleans or as strings depending on the field."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "1", "yes", "remote"}
+    return bool(value)
 
 
 def _parse_created(value: object) -> datetime | None:
