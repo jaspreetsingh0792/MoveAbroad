@@ -70,6 +70,14 @@ def main(argv: list[str] | None = None) -> int:
             print(f"\nHTML digest written to {save_html(result, html_path)}")
         except OSError as exc:
             print(f"Could not write HTML digest to {html_path}: {exc}", file=sys.stderr)
+
+    broken = result.unhealthy_sources
+    if broken and args.fail_on_source_error:
+        print(
+            "Source errors this run: " + "; ".join(h.summary() for h in broken),
+            file=sys.stderr,
+        )
+        return 1
     return 0
 
 
@@ -103,6 +111,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--save-html",
         metavar="PATH",
         help="Write the rendered HTML digest here on every run, dry-run included",
+    )
+    parser.add_argument(
+        "--fail-on-source-error",
+        action="store_true",
+        help="Exit non-zero if any source or board failed, so a scheduled run goes red",
     )
     parser.add_argument("-v", "--verbose", action="store_true")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
