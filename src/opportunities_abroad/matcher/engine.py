@@ -72,6 +72,20 @@ _REMOTE_HINT_RE = re.compile(
     re.IGNORECASE,
 )
 _HYBRID_HINT_RE = re.compile(r"\bhybrid\b", re.IGNORECASE)
+
+# Location strings often mix a work mode with a place ("Remote - Brazil").
+# These carry no eligibility information on their own.
+_WORK_MODE_WORDS = {
+    "remote",
+    "fully remote",
+    "remote work",
+    "work from home",
+    "wfh",
+    "hybrid",
+    "onsite",
+    "on site",
+    "in office",
+}
 _ONSITE_HINT_RE = re.compile(
     r"\b(on[\s-]?site|in[\s-]?office|office[\s-]?based)\b",
     re.IGNORECASE,
@@ -152,17 +166,17 @@ def score_job(job: Job, prefs: Prefs, *, stats: MatchStats | None = None) -> Mat
             _count(stats, "rejected_location")
             return None
 
-    if hybrid and prefs.accept_hybrid and _geo_matches(job, prefs, location_l, haystack):
+    if hybrid and prefs.accept_hybrid and _geo_matches(prefs, location_l):
         mode_ok = True
         reasons.append("hybrid")
 
-    if prefs.accept_onsite and not remote and _geo_matches(job, prefs, location_l, haystack):
+    if prefs.accept_onsite and not remote and _geo_matches(prefs, location_l):
         mode_ok = True
         if "hybrid" not in reasons:
             reasons.append("onsite")
 
     # A remote job sitting in a target city still counts as onsite-friendly.
-    if not mode_ok and prefs.accept_onsite and _geo_matches(job, prefs, location_l, location_l):
+    if not mode_ok and prefs.accept_onsite and _geo_matches(prefs, location_l):
         mode_ok = True
         reasons.append("onsite")
 
@@ -206,7 +220,7 @@ def location_bonus(location_l: str, weights: dict[str, int]) -> int:
 def country_for_location(location: str, remote: bool = False) -> str:
     """Bucket a job for the digest: a country name, then Europe, Remote, or Other."""
     location_l = (location or "").lower()
-    segments = {s.strip() for s in re.split(r"[,/|()\-–—]", location_l) if s.strip()}
+    segments = _location_segments(location_l)
     generic = {"eu", "europe"}
     for country, aliases in COUNTRY_ALIASES.items():
         if country in generic:
@@ -284,18 +298,33 @@ def _geo_tokens(prefs: Prefs) -> set[str]:
     return {t for t in tokens if t}
 
 
-def _geo_matches(job: Job, prefs: Prefs, location_l: str, haystack: str) -> bool:
+def _geo_matches(prefs: Prefs, location_l: str) -> bool:
+    """Whether a job is physically in a target place.
+
+    Only ``job.location`` is consulted. Description text is deliberately
+    excluded: a posting for Austin that mentions colleagues in Amsterdam is
+    not an Amsterdam job, and geography here is a hard filter. Remote-policy
+    hints still read the description — that is a different question.
+    """
     tokens = _geo_tokens(prefs)
     if not tokens:
         return True
-    # Prefer the explicit location field; fall back to the full text.
-    fields = [location_l, haystack]
+    if not location_l:
+        return False
+    segments = _location_segments(location_l)
     for token in tokens:
-        pattern = rf"(?<!\w){re.escape(token)}(?!\w)"
-        search_in = fields[0] if len(token) <= 2 else " ".join(fields)
-        if re.search(pattern, search_in):
+        # Two-letter codes must stand alone as a segment, or "Rio de Janeiro"
+        # would read as Germany.
+        if len(token) <= 2:
+            if token in segments:
+                return True
+        elif _phrase_in(location_l, token):
             return True
     return False
+
+
+def _location_segments(location_l: str) -> set[str]:
+    return {s.strip() for s in re.split(r"[,/|()\-–—]", location_l) if s.strip()}
 
 
 def _remote_location_allowed(job: Job, prefs: Prefs, haystack: str) -> bool:
@@ -322,11 +351,18 @@ def _remote_location_allowed(job: Job, prefs: Prefs, haystack: str) -> bool:
     accept = [p.lower().strip() for p in prefs.remote_accept_locations if p.strip()]
     if not accept:
         return True
-    if not location_l or location_l in {"remote", "worldwide", "anywhere", "global"}:
+    if not location_l:
         return True
-    if any(_phrase_in(location_l, p) or p in location_l for p in accept):
+
+    # "Remote" on its own says nothing about eligibility, but "Remote - Brazil"
+    # names a requirement. Judge the parts that are not just a work-mode word.
+    named_places = _location_segments(location_l) - _WORK_MODE_WORDS
+    if not named_places:
         return True
-    # Remote role sitting in a target country/city is still useful (EU remote).
-    if _geo_matches(job, prefs, location_l, location_l):
-        return True
+    for place in named_places:
+        if any(place == p or _phrase_in(place, p) for p in accept):
+            return True
+        # Remote role sitting in a target country/city is still useful (EU remote).
+        if _geo_matches(prefs, place):
+            return True
     return False
