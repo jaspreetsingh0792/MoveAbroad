@@ -31,6 +31,9 @@ def test_example_prefs_seed_ats_boards_and_title_filters():
     included = [t.lower() for t in prefs.title_include]
     assert {"engineer", "developer", "sre"} <= set(included)
     assert prefs.scored_hits("keyword_hit", 99) == 4
+    assert "senior" in prefs.seniority_allow
+    assert "junior" not in prefs.seniority_allow
+    assert prefs.seniority_keep_unknown is True
 
 
 def test_example_prefs_reject_a_non_technical_title():
@@ -59,6 +62,8 @@ def test_defaults_when_keys_are_absent():
     assert prefs.boards_for("greenhouse") == []
     assert prefs.visa_require is False
     assert prefs.visa_classifier is False
+    assert prefs.seniority_allow == []
+    assert prefs.seniority_keep_unknown is True
     assert prefs.save_html_to is None
     assert prefs.weight("title_hit") == 8
     assert prefs.location_weights == {"netherlands": 6, "germany": 3, "europe": 3}
