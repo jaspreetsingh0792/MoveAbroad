@@ -16,6 +16,7 @@ from opportunities_abroad.pipeline import run
 from opportunities_abroad.prefs import load_prefs
 from opportunities_abroad.sources.registry import build_sources
 from opportunities_abroad.store.sqlite import SqliteJobStore
+from opportunities_abroad.visa import SponsorRegister
 
 DEFAULT_PREFS_CANDIDATES = ("prefs.yaml", "prefs.json", "prefs.example.yaml")
 
@@ -57,6 +58,7 @@ def main(argv: list[str] | None = None) -> int:
             store,
             notifier=notifier if args.send else None,
             classifier=build_classifier(prefs, store),
+            register=SponsorRegister.load(args.sponsor_register or prefs.sponsor_register_path),
             send=args.send,
             mark_seen=args.mark_seen,
             limit=args.limit,
@@ -111,6 +113,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--save-html",
         metavar="PATH",
         help="Write the rendered HTML digest here on every run, dry-run included",
+    )
+    parser.add_argument(
+        "--sponsor-register",
+        metavar="PATH",
+        help=(
+            "List of employers licensed to sponsor, one per line or CSV "
+            "(same as visa.sponsor_register)"
+        ),
     )
     parser.add_argument(
         "--fail-on-source-error",

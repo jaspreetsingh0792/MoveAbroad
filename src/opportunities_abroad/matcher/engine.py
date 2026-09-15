@@ -8,6 +8,7 @@ from opportunities_abroad import seniority
 from opportunities_abroad.models import Job, Match
 from opportunities_abroad.prefs import Prefs
 from opportunities_abroad.textutil import strip_html
+from opportunities_abroad.visa import SponsorRegister, has_hard_restriction
 
 # Expand user-facing country names into tokens that commonly appear in job posts.
 COUNTRY_ALIASES: dict[str, set[str]] = {
@@ -132,25 +133,35 @@ class MatchStats:
     rejected_visa: int = 0
 
 
-def match_jobs(jobs: list[Job], prefs: Prefs) -> list[Match]:
+def match_jobs(
+    jobs: list[Job], prefs: Prefs, register: SponsorRegister | None = None
+) -> list[Match]:
     """Return all matching jobs, highest score first. Does not slice to max_jobs."""
-    matches, _ = match_jobs_with_stats(jobs, prefs)
+    matches, _ = match_jobs_with_stats(jobs, prefs, register)
     return matches
 
 
-def match_jobs_with_stats(jobs: list[Job], prefs: Prefs) -> tuple[list[Match], MatchStats]:
+def match_jobs_with_stats(
+    jobs: list[Job], prefs: Prefs, register: SponsorRegister | None = None
+) -> tuple[list[Match], MatchStats]:
     """Match every job and report why the rest were dropped."""
     stats = MatchStats()
     matches: list[Match] = []
     for job in jobs:
-        result = score_job(job, prefs, stats=stats)
+        result = score_job(job, prefs, stats=stats, register=register)
         if result is not None:
             matches.append(result)
     matches.sort(key=lambda m: (-m.score, m.job.title.lower()))
     return matches, stats
 
 
-def score_job(job: Job, prefs: Prefs, *, stats: MatchStats | None = None) -> Match | None:
+def score_job(
+    job: Job,
+    prefs: Prefs,
+    *,
+    stats: MatchStats | None = None,
+    register: SponsorRegister | None = None,
+) -> Match | None:
     haystack = strip_html(job.searchable_text).lower()
     title_l = job.title.lower()
     location_l = (job.location or "").lower()
@@ -179,8 +190,15 @@ def score_job(job: Job, prefs: Prefs, *, stats: MatchStats | None = None) -> Mat
     if prefs.include_keywords and not include_hits:
         return None
 
-    visa_hits = _keyword_hits(prefs.visa_keywords, haystack)
-    if prefs.visa_require and job.visa_sponsorship is not True and not visa_hits:
+    # Hard restrictions win. "We do not offer visa sponsorship" contains both
+    # visa keywords, so without this it would read as evidence in favour.
+    restricted = has_hard_restriction(haystack)
+    visa_hits = [] if restricted else _keyword_hits(prefs.visa_keywords, haystack)
+    on_register = bool(register and register.contains(job.company))
+    sponsorship_likely = not restricted and (
+        job.visa_sponsorship is True or on_register or bool(visa_hits)
+    )
+    if prefs.visa_require and not sponsorship_likely:
         _count(stats, "rejected_visa")
         return None
 
@@ -225,16 +243,31 @@ def score_job(job: Job, prefs: Prefs, *, stats: MatchStats | None = None) -> Mat
     if remote:
         score += prefs.weight("remote")
     score += prefs.weight("visa_hit") * prefs.scored_hits("visa_hit", len(visa_hits))
+    if on_register:
+        score += prefs.weight("sponsor_register")
+    if restricted:
+        # Not dropped unless visa.require says so, but it must never outrank a
+        # posting that simply stays silent.
+        score += prefs.weight("visa_restricted")
     score += location_bonus(location_l, prefs.location_weights)
 
     if include_hits:
         reasons.append("keywords:" + ",".join(include_hits[:5]))
-    if visa_hits:
+    if on_register:
+        reasons.append("visa:sponsor-register")
+    if restricted:
+        reasons.append("visa:restricted")
+    elif visa_hits:
         reasons.append("visa:" + ",".join(visa_hits[:3]))
     elif job.visa_sponsorship is True:
         reasons.append("visa:source-flagged")
 
-    return Match(job=job, score=score, reasons=reasons, seniority=level)
+    match = Match(job=job, score=score, reasons=reasons, seniority=level)
+    if restricted:
+        # Deterministic evidence, so the classifier has nothing to add.
+        match.sponsorship = "no"
+        match.sponsorship_reason = "Posting states sponsorship is not available."
+    return match
 
 
 def location_bonus(location_l: str, weights: dict[str, int]) -> int:

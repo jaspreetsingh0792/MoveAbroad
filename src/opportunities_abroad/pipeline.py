@@ -9,6 +9,7 @@ from opportunities_abroad.notifiers.base import Notifier
 from opportunities_abroad.prefs import Prefs
 from opportunities_abroad.sources.base import JobSource
 from opportunities_abroad.store.sqlite import SqliteJobStore
+from opportunities_abroad.visa import SponsorRegister
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,7 @@ def run(
     *,
     notifier: Notifier | None = None,
     classifier: VisaClassifier | None = None,
+    register: SponsorRegister | None = None,
     send: bool = False,
     mark_seen: bool = False,
     limit: int | None = None,
@@ -50,7 +52,7 @@ def run(
     for report in source_health:
         if not report.healthy:
             logger.warning("Source health: %s", report.summary())
-    matches, stats = match_jobs_with_stats(jobs, prefs)
+    matches, stats = match_jobs_with_stats(jobs, prefs, register)
     logger.info("Matched %s / %s fetched jobs", len(matches), len(jobs))
 
     new_jobs = store.filter_new([m.job for m in matches])

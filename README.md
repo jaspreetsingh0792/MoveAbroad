@@ -141,6 +141,7 @@ Useful flags:
 | `--mark-seen` | Dry-run but still record matches so the next run skips them |
 | `--limit N` | Cap the digest |
 | `--save-html PATH` | Write the rendered HTML digest to `PATH` on every run, dry-run included (same as `digest.save_html_to`) |
+| `--sponsor-register PATH` | List of employers licensed to sponsor (same as `visa.sponsor_register`) |
 | `--fail-on-source-error` | Exit non-zero if any source or board failed, so a scheduled run goes red |
 | `-v` | Debug logging |
 
@@ -267,7 +268,7 @@ See `prefs.example.yaml`. Highlights:
 - `work_mode.remote` / `hybrid` / `onsite` / `remote_only`
 - `remote.accept_locations` / `reject_locations` — candidate-location strings on remote jobs
 - `visa_keywords` — ranking boost only
-- `visa.require` / `visa.classifier` — see [Visa sponsorship](#visa-sponsorship)
+- `visa.require` / `visa.classifier` / `visa.sponsor_register` — see [Visa sponsorship](#visa-sponsorship)
 - `score_weights` — `title_hit` (8), `keyword_hit` (3), `remote` (4), `visa_hit` (5). Override individually; anything you omit keeps its default
 - `score_caps` — how many hits of each kind still earn score: `title_hit` (3), `keyword_hit` (4), `visa_hit` (2), `0` for uncapped. Without a ceiling a posting listing twenty technologies outranks a well-matched role naming a few
 - `location_weights` — country or city → bonus, matched against the job's location. Country names expand through the same aliases. Only the best single match applies, so a city bonus never stacks on its country's. Supplying this map replaces the defaults (`Netherlands: 6`, `Germany: 3`, `Europe: 3`) rather than merging, so you can drop entries
@@ -281,19 +282,39 @@ JSON prefs are also accepted (`--prefs prefs.json`).
 ### Visa sponsorship
 
 Sponsorship is usually the deciding factor when relocating, so it is tracked
-three ways:
+several ways, strongest evidence first:
 
-1. **Source flag.** Arbeitnow publishes a sponsorship field; it is carried on
-   the job and shown as `visa:source-flagged`.
-2. **Keywords.** `visa_keywords` still add to the score.
-3. **Classifier (optional).** With `visa.classifier: true` and
-   `ANTHROPIC_API_KEY` set, each matched posting's title and first ~2500
-   characters of description go to the Anthropic Messages API, which returns
+1. **Hard restrictions win.** A posting saying outright that sponsorship is
+   unavailable — *"we do not offer visa sponsorship"*, *"must already have the
+   right to work"*, *"EU citizens only"* — is decisive. This matters more than
+   it sounds: that sentence contains the words "visa" and "sponsorship", so
+   without this rule it scored as evidence *in favour*, and a posting refusing
+   sponsorship outranked one that simply said nothing. Restricted postings now
+   carry a negative weight, show `visa:restricted`, and are dropped outright
+   under `visa.require`.
+2. **Sponsor register.** `visa.sponsor_register` points at a list of employers
+   licensed to sponsor — download an official one, such as the Dutch IND public
+   register of recognised sponsors. Membership is a fact about the *company*
+   rather than a claim in one posting, so it is much stronger than prose: it
+   satisfies `visa.require` on its own and shows `visa:sponsor-register`.
+   Nothing is fetched at runtime and legal forms are ignored, so `Adyen N.V.`
+   matches `Adyen`.
+3. **Source flag.** Arbeitnow publishes a sponsorship field; shown as
+   `visa:source-flagged`.
+4. **Keywords.** `visa_keywords` add to the score.
+5. **Classifier (optional).** With `visa.classifier: true` and
+   `ANTHROPIC_API_KEY` set, each matched posting's title and visa-relevant
+   passages go to the Anthropic Messages API, which returns
    `{"sponsorship": "yes"|"no"|"unclear", "reason": "..."}`. The verdict and
    reason appear in the digest.
 
-Set `visa.require: true` to keep only jobs that either carry the source flag or
-hit a visa keyword.
+The first two are deterministic and cost nothing, and a posting already decided
+by a hard restriction never reaches the classifier — no point paying to confirm
+a refusal.
+
+Set `visa.require: true` to keep only jobs with sponsorship evidence: the
+source flag, register membership, or a visa keyword, and never a posting that
+rules it out.
 
 The classifier is off by default and costs money when on. Verdicts are cached
 in SQLite by job key, so a rerun never pays for the same posting twice, and any
@@ -374,6 +395,7 @@ src/opportunities_abroad/
   prefs.py            # YAML/JSON preferences
   models.py           # Job, Match, RunResult, SourceHealth
   seniority.py        # level classification from a job title
+  visa.py             # hard restrictions + sponsor register (deterministic)
   digest.py           # grouping + text/HTML/console rendering
   classifier.py       # optional visa-sponsorship verdicts
   sources/            # remotive, arbeitnow, adzuna, greenhouse, lever, ashby

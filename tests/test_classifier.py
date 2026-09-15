@@ -196,6 +196,18 @@ def test_uses_the_shared_polite_client_when_none_is_injected(classifier_prefs, s
     assert built == [12.5]
 
 
+def test_deterministic_verdicts_skip_the_api(classifier_prefs, store):
+    """A hard restriction already decided it; paying to confirm is waste."""
+    with reply(json.dumps({"sponsorship": "yes", "reason": "nope"})) as client:
+        decided = a_match()
+        decided.sponsorship = "no"
+        decided.sponsorship_reason = "Posting states sponsorship is not available."
+        VisaClassifier(classifier_prefs, store, client=client, key="k").annotate([decided])
+        assert client.calls == []  # type: ignore[attr-defined]
+
+    assert decided.sponsorship == "no"
+
+
 def test_annotate_with_no_matches_makes_no_calls(classifier_prefs, store):
     with reply("{}") as client:
         VisaClassifier(classifier_prefs, store, client=client, key="k").annotate([])

@@ -109,6 +109,9 @@ class VisaClassifier:
         checked = 0
         try:
             for match in matches:
+                # A hard restriction is already decisive; do not pay to confirm it.
+                if match.sponsorship:
+                    continue
                 cached = self._store.get_visa_verdict(match.job.key)
                 if cached is not None:
                     match.sponsorship, match.sponsorship_reason = cached
