@@ -5,6 +5,8 @@ import re
 
 _TAG_RE = re.compile(r"<[^>]+>", re.IGNORECASE)
 _WS_RE = re.compile(r"\s+")
+# Tags become spaces, which strands punctuation that hugged a closing tag.
+_SPACE_BEFORE_PUNCT_RE = re.compile(r"\s+([,.;:!?%)\]])")
 
 
 def strip_html(value: str | None) -> str:
@@ -12,7 +14,8 @@ def strip_html(value: str | None) -> str:
         return ""
     text = _TAG_RE.sub(" ", value)
     text = html.unescape(text)
-    return _WS_RE.sub(" ", text).strip()
+    text = _WS_RE.sub(" ", text)
+    return _SPACE_BEFORE_PUNCT_RE.sub(r"\1", text).strip()
 
 
 def normalize_url(url: str | None) -> str:

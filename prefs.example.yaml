@@ -34,6 +34,27 @@ exclude_keywords:
   - "student only"
   - bootcamp
 
+# Matched against the job title only, with the same word-boundary phrase rules
+# as exclude_keywords ("intern" will not hit "international").
+title_exclude:
+  - junior
+  - jr
+  - graduate
+  - trainee
+  - apprentice
+  - intern
+  - internship
+  - working student
+  - werkstudent
+  - stage
+  - stagiair
+
+# Leave empty to accept any title that passes the filters above.
+title_include: []
+
+# Drop postings older than this when the source reports a date. 0 disables.
+max_age_days: 14
+
 # Target onsite / hybrid geography (case-insensitive; aliases are expanded).
 locations:
   countries:
@@ -112,13 +133,56 @@ visa_keywords:
   - kennismigrant
   - immigration
 
+# Ranking knobs. Every listed keyword that hits adds its weight, so a title
+# packed with your keywords outranks one that mentions them in passing.
+score_weights:
+  title_hit: 8      # per include_keyword found in the title
+  keyword_hit: 3    # per include_keyword found anywhere
+  remote: 4         # flat bonus for a remote role
+  visa_hit: 5       # per visa_keyword found anywhere
+
+# Country or city -> bonus, matched against the job's location. Country names
+# expand through the built-in aliases (Netherlands also covers NL, Amsterdam,
+# Rotterdam, ...). Only the single best match applies; city weights do not
+# stack on top of their country.
+location_weights:
+  Netherlands: 6
+  Germany: 3
+  Europe: 3
+
 digest:
   max_jobs: 25
+  # Write the rendered HTML digest here on every run, including dry-run.
+  # save_html_to: data/digest.html
 
 sources:
   remotive: true
   arbeitnow: true
   adzuna: true   # live calls only if ADZUNA_APP_ID and ADZUNA_API_KEY are set
+  greenhouse: true
+  lever: true
+  ashby: true
+
+# Company job boards published by applicant-tracking systems. All three are
+# public, key-free JSON endpoints; a board is only fetched if it is listed here.
+# A slug is the company segment of the public board URL, e.g.
+#   https://boards.greenhouse.io/SLUG  https://jobs.lever.co/SLUG  https://jobs.ashbyhq.com/SLUG
+# These seeds are NL/EU companies as a starting point — open each board URL to
+# confirm the slug. An unknown slug is logged and skipped, never fatal.
+ats_boards:
+  greenhouse:
+    - adyen
+    - mollie
+    - elastic
+    - databricks
+  lever:
+    - wetransfer
+    - tiqets
+    - plaid
+  ashby:
+    - framer
+    - linear
+    - ramp
 
 # Used only when the Adzuna source is enabled and keys are present.
 adzuna:
