@@ -7,6 +7,7 @@ from opportunities_abroad.matcher.engine import (
     country_for_location,
     match_jobs,
     match_jobs_with_stats,
+    place_key,
     score_job,
 )
 from opportunities_abroad.prefs import prefs_from_dict
@@ -275,6 +276,29 @@ def test_match_jobs_with_stats_reports_drops(sample_prefs):
     assert stats.rejected_title == 1
     assert stats.too_old == 1
     assert stats.rejected_location == 1
+
+
+def test_place_key_prefers_the_city_over_the_country():
+    # The same city written two ways has to agree, or the dedupe is useless.
+    assert place_key("Amsterdam") == place_key("Amsterdam, Netherlands")
+    assert place_key("Amsterdam") == place_key("Amsterdam, NL")
+    assert place_key("Berlin, Germany") == place_key("Berlin, DE")
+    # Different cities in one country must not.
+    assert place_key("Amsterdam, Netherlands") != place_key("Rotterdam, Netherlands")
+    assert place_key("Berlin, Germany") != place_key("Munich, Germany")
+
+
+def test_place_key_falls_back_to_the_country_bucket():
+    assert place_key("Netherlands") == "Netherlands"
+    assert place_key("Remote - Netherlands", remote=True) == "Netherlands"
+    assert place_key("", remote=True) == "Remote"
+    assert place_key("Remote", remote=True) == "Remote"
+    assert place_key("") == "Other"
+
+
+def test_place_key_ignores_work_mode_words():
+    assert place_key("Amsterdam") == place_key("Hybrid - Amsterdam")
+    assert place_key("Amsterdam") == place_key("Amsterdam (Remote)")
 
 
 def test_country_for_location_buckets():

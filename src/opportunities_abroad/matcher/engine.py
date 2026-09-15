@@ -57,6 +57,34 @@ COUNTRY_ALIASES: dict[str, set[str]] = {
     "europe": {"europe", "european", "emea", "eea", "eu"},
 }
 
+# The country-level entries of COUNTRY_ALIASES: names and codes, as opposed to
+# the city names living alongside them. Stripping these from a location leaves
+# the specific place, which is what tells two openings apart.
+COUNTRY_NAME_TOKENS: frozenset[str] = frozenset(
+    {
+        "netherlands", "the netherlands", "holland", "nl",
+        "germany", "deutschland", "de",
+        "belgium", "belgië", "belgie", "be",
+        "austria", "österreich", "at",
+        "ireland", "ie",
+        "france", "fr",
+        "spain", "es",
+        "portugal", "pt",
+        "sweden", "se",
+        "denmark", "dk",
+        "finland", "fi",
+        "norway", "no",
+        "poland", "pl",
+        "czech republic", "czechia", "cz",
+        "switzerland", "ch",
+        "estonia", "ee",
+        "eu", "european union", "europe", "european", "eea", "emea", "schengen",
+        # Common non-target countries, so a US or UK posting keys on its city.
+        "united states", "usa", "us", "united kingdom", "uk", "britain",
+        "canada", "india", "brazil", "australia",
+    }
+)
+
 _US_ONLY_RE = re.compile(
     r"\b("
     r"usa?\s*only|united states\s*only|u\.s\.?\s*only|"
@@ -238,6 +266,23 @@ def country_for_location(location: str, remote: bool = False) -> str:
     if remote:
         return "Remote"
     return "Other"
+
+
+def place_key(location: str, remote: bool = False) -> str:
+    """The most specific place a posting names, for dedupe identity.
+
+    Country names are stripped, so "Amsterdam" and "Amsterdam, Netherlands"
+    agree while Amsterdam and Rotterdam stay apart. When only a country is
+    named there is nothing finer to key on, so the country bucket stands in.
+
+    Erring towards "different" here is deliberate: a duplicate email costs a
+    glance, a swallowed opening costs an application.
+    """
+    location_l = (location or "").lower()
+    named = _location_segments(location_l) - COUNTRY_NAME_TOKENS - _WORK_MODE_WORDS
+    if named:
+        return " ".join(sorted(named))
+    return country_for_location(location, remote=remote)
 
 
 def _weight_tokens(name: str) -> set[str]:

@@ -122,6 +122,28 @@ def test_same_title_in_two_countries_stays_two_jobs(tmp_path):
     store.close()
 
 
+def test_same_title_in_two_cities_of_one_country_stays_two_jobs(tmp_path):
+    """Amsterdam and Rotterdam are separate openings, not one duplicated."""
+    store = SqliteJobStore(tmp_path / "seen.db")
+    amsterdam = make_job(
+        company="Databricks",
+        source_id="1",
+        title="Software Engineer",
+        location="Amsterdam, Netherlands",
+        url="https://boards.greenhouse.io/databricks/jobs/1",
+    )
+    rotterdam = make_job(
+        company="Databricks",
+        source_id="2",
+        title="Software Engineer",
+        location="Rotterdam, Netherlands",
+        url="https://boards.greenhouse.io/databricks/jobs/2",
+    )
+    store.mark_seen([amsterdam])
+    assert store.is_seen(rotterdam) is False
+    store.close()
+
+
 def test_location_spelling_differences_still_collapse(tmp_path):
     """The whole point of the fingerprint: one role, two sources, two spellings."""
     store = SqliteJobStore(tmp_path / "seen.db")

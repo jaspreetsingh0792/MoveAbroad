@@ -3,6 +3,7 @@ from opportunities_abroad.matcher.engine import (
     country_for_location,
     match_jobs,
     match_jobs_with_stats,
+    place_key,
     score_job,
 )
 
@@ -11,5 +12,6 @@ __all__ = [
     "country_for_location",
     "match_jobs",
     "match_jobs_with_stats",
+    "place_key",
     "score_job",
 ]
