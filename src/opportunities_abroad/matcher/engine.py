@@ -185,11 +185,11 @@ def score_job(job: Job, prefs: Prefs, *, stats: MatchStats | None = None) -> Mat
         return None
 
     title_hits = _keyword_hits(prefs.include_keywords, title_l)
-    score = prefs.weight("title_hit") * len(title_hits)
-    score += prefs.weight("keyword_hit") * len(include_hits)
+    score = prefs.weight("title_hit") * prefs.scored_hits("title_hit", len(title_hits))
+    score += prefs.weight("keyword_hit") * prefs.scored_hits("keyword_hit", len(include_hits))
     if remote:
         score += prefs.weight("remote")
-    score += prefs.weight("visa_hit") * len(visa_hits)
+    score += prefs.weight("visa_hit") * prefs.scored_hits("visa_hit", len(visa_hits))
     score += location_bonus(location_l, prefs.location_weights)
 
     if include_hits:
