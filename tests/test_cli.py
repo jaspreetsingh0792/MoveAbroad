@@ -87,6 +87,31 @@ def test_flag_wins_over_the_pref(workspace):
     assert not (tmp_path / "from-prefs.html").exists()
 
 
+class BrokenSource(JobSource):
+    name = "broken"
+
+    def fetch(self, prefs):
+        raise RuntimeError("upstream is down")
+
+
+def test_source_failure_is_visible_but_not_fatal_by_default(workspace, monkeypatch, capsys):
+    monkeypatch.setattr(cli, "build_sources", lambda prefs: [StubSource(), BrokenSource()])
+    assert run_cli(workspace) == 0
+    out = capsys.readouterr().out
+    assert "Source problems this run: broken" in out
+    assert "broken: FAILED" in out
+
+
+def test_fail_on_source_error_makes_the_run_go_red(workspace, monkeypatch, capsys):
+    monkeypatch.setattr(cli, "build_sources", lambda prefs: [StubSource(), BrokenSource()])
+    assert run_cli(workspace, "--fail-on-source-error") == 1
+    assert "Source errors this run" in capsys.readouterr().err
+
+
+def test_fail_on_source_error_passes_when_sources_are_healthy(workspace):
+    assert run_cli(workspace, "--fail-on-source-error") == 0
+
+
 def test_missing_prefs_file_is_a_clean_failure(tmp_path, capsys):
     assert cli.main(["--prefs", str(tmp_path / "nope.yaml")]) == 2
     assert "Preferences file not found" in capsys.readouterr().err

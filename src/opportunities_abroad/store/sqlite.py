@@ -4,8 +4,28 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
+from opportunities_abroad.matcher.engine import place_key
 from opportunities_abroad.models import Job
 from opportunities_abroad.textutil import fingerprint, normalize_url
+
+# Bumped whenever the fingerprint seed changes, so existing databases
+# recompute instead of silently holding identities nothing will ever match.
+FINGERPRINT_VERSION = "2"
+
+
+def job_fingerprint(job: Job) -> str:
+    """Cross-source identity for a job.
+
+    The location is reduced to a place key first: sources spell places
+    differently ("Amsterdam" vs "Amsterdam, Netherlands"), so matching the raw
+    string would defeat the dedupe, while ignoring location entirely would
+    merge separate openings into one.
+    """
+    return fingerprint(
+        job.company,
+        job.title,
+        place_key(job.location, remote=job.remote is True),
+    )
 
 
 class SqliteJobStore:
@@ -38,6 +58,7 @@ class SqliteJobStore:
                 url_norm TEXT,
                 title TEXT,
                 company TEXT,
+                location TEXT,
                 fingerprint TEXT,
                 first_seen TEXT NOT NULL,
                 last_seen TEXT NOT NULL,
@@ -52,6 +73,11 @@ class SqliteJobStore:
                 model TEXT,
                 checked_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
             """
         )
         self._migrate()
@@ -62,15 +88,38 @@ class SqliteJobStore:
         columns = {row["name"] for row in self._conn.execute("PRAGMA table_info(seen_jobs)")}
         if "fingerprint" not in columns:
             self._conn.execute("ALTER TABLE seen_jobs ADD COLUMN fingerprint TEXT")
+        if "location" not in columns:
+            self._conn.execute("ALTER TABLE seen_jobs ADD COLUMN location TEXT")
+
+        if self._get_meta("fingerprint_version") != FINGERPRINT_VERSION:
             self._backfill_fingerprints()
+            self._set_meta("fingerprint_version", FINGERPRINT_VERSION)
+
         self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_seen_fingerprint ON seen_jobs(fingerprint)"
         )
 
+    def _get_meta(self, key: str) -> str | None:
+        row = self._conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else None
+
+    def _set_meta(self, key: str, value: str) -> None:
+        self._conn.execute(
+            "INSERT INTO meta (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value),
+        )
+
     def _backfill_fingerprints(self) -> None:
-        rows = self._conn.execute("SELECT job_key, company, title, url FROM seen_jobs").fetchall()
+        rows = self._conn.execute(
+            "SELECT job_key, company, title, location FROM seen_jobs"
+        ).fetchall()
         updates = [
-            (fingerprint(row["company"], row["title"], row["url"]), row["job_key"]) for row in rows
+            (
+                fingerprint(row["company"], row["title"], place_key(row["location"] or "")),
+                row["job_key"],
+            )
+            for row in rows
         ]
         self._conn.executemany(
             "UPDATE seen_jobs SET fingerprint = ? WHERE job_key = ?",
@@ -79,7 +128,7 @@ class SqliteJobStore:
 
     def is_seen(self, job: Job) -> bool:
         url_norm = normalize_url(job.url)
-        identity = fingerprint(job.company, job.title, job.url)
+        identity = job_fingerprint(job)
         row = self._conn.execute(
             """
             SELECT 1 FROM seen_jobs
@@ -100,7 +149,7 @@ class SqliteJobStore:
         seen_prints: set[str] = set()
         for job in jobs:
             url_norm = normalize_url(job.url)
-            identity = fingerprint(job.company, job.title, job.url)
+            identity = job_fingerprint(job)
             if job.key in seen_keys:
                 continue
             if url_norm and url_norm in seen_urls:
@@ -130,7 +179,8 @@ class SqliteJobStore:
                     normalize_url(job.url),
                     job.title,
                     job.company,
-                    fingerprint(job.company, job.title, job.url),
+                    job.location,
+                    job_fingerprint(job),
                     now,
                     now,
                     1 if notified else 0,
@@ -139,14 +189,15 @@ class SqliteJobStore:
         self._conn.executemany(
             """
             INSERT INTO seen_jobs (
-                job_key, source, source_id, url, url_norm, title, company, fingerprint,
-                first_seen, last_seen, notified
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                job_key, source, source_id, url, url_norm, title, company, location,
+                fingerprint, first_seen, last_seen, notified
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(job_key) DO UPDATE SET
                 last_seen = excluded.last_seen,
                 notified = MAX(seen_jobs.notified, excluded.notified),
                 url = excluded.url,
                 url_norm = excluded.url_norm,
+                location = excluded.location,
                 fingerprint = excluded.fingerprint
             """,
             rows,

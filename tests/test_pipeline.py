@@ -65,11 +65,34 @@ def store(tmp_path):
 
 
 def test_fetch_all_survives_a_crashing_source(prefs):
-    jobs = fetch_all(
+    jobs, health = fetch_all(
         [StubSource("broken", boom=True), StubSource("ok", [make_job()])],
         prefs,
     )
     assert [j.source_id for j in jobs] == ["1"]
+
+    broken, ok = health
+    assert broken.name == "broken"
+    assert broken.failed is True
+    assert broken.healthy is False
+    assert "source exploded" in broken.error
+    assert ok.healthy is True
+    assert ok.fetched == 1
+
+
+def test_run_carries_source_health(prefs, store):
+    result = run(
+        prefs,
+        [StubSource("broken", boom=True), StubSource("ok", [make_job(title="Python Engineer")])],
+        store,
+    )
+    assert [h.name for h in result.sources] == ["broken", "ok"]
+    assert [h.name for h in result.unhealthy_sources] == ["broken"]
+
+
+def test_healthy_run_reports_no_problems(prefs, store):
+    result = run(prefs, [StubSource("ok", [make_job(title="Python Engineer")])], store)
+    assert result.unhealthy_sources == []
 
 
 def test_run_reports_every_rejection_reason(prefs, store):

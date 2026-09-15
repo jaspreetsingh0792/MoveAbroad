@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from opportunities_abroad.matcher.engine import score_job
 from opportunities_abroad.prefs import load_prefs, prefs_from_dict
+
+from tests.conftest import make_job
 
 
 def test_example_prefs_load():
@@ -25,6 +28,32 @@ def test_example_prefs_seed_ats_boards_and_title_filters():
     assert {"junior", "working student", "intern"} <= set(lowered)
     assert prefs.max_age_days == 14
 
+    included = [t.lower() for t in prefs.title_include]
+    assert {"engineer", "developer", "sre"} <= set(included)
+    assert prefs.scored_hits("keyword_hit", 99) == 4
+    assert "senior" in prefs.seniority_allow
+    assert "junior" not in prefs.seniority_allow
+    assert prefs.seniority_keep_unknown is True
+
+
+def test_example_prefs_reject_a_non_technical_title():
+    path = Path(__file__).resolve().parents[1] / "prefs.example.yaml"
+    prefs = load_prefs(path)
+    manager = make_job(
+        title="Product Manager",
+        location="Amsterdam, Netherlands",
+        description="You will work closely with our Python and backend engineering teams.",
+        remote=False,
+    )
+    engineer = make_job(
+        title="Senior Backend Engineer",
+        location="Amsterdam, Netherlands",
+        description="Python backend role.",
+        remote=False,
+    )
+    assert score_job(manager, prefs) is None
+    assert score_job(engineer, prefs) is not None
+
 
 def test_defaults_when_keys_are_absent():
     prefs = prefs_from_dict({})
@@ -33,6 +62,8 @@ def test_defaults_when_keys_are_absent():
     assert prefs.boards_for("greenhouse") == []
     assert prefs.visa_require is False
     assert prefs.visa_classifier is False
+    assert prefs.seniority_allow == []
+    assert prefs.seniority_keep_unknown is True
     assert prefs.save_html_to is None
     assert prefs.weight("title_hit") == 8
     assert prefs.location_weights == {"netherlands": 6, "germany": 3, "europe": 3}

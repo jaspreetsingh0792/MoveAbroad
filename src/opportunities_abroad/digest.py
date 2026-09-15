@@ -20,8 +20,21 @@ def header_line(result: RunResult) -> str:
         f"{result.new_count} new · "
         f"{result.already_seen} already seen · "
         f"{result.too_old} too old · "
-        f"{result.rejected} rejected (US-only / title / visa)"
+        f"{result.rejected} rejected (US-only / title / seniority / visa)"
     )
+
+
+def source_lines(result: RunResult) -> list[str]:
+    """Per-source accounting, so a dead source cannot hide behind a normal digest."""
+    return [health.summary() for health in result.sources]
+
+
+def health_warning(result: RunResult) -> str:
+    broken = result.unhealthy_sources
+    if not broken:
+        return ""
+    names = ", ".join(h.name for h in broken)
+    return f"⚠ Source problems this run: {names}. Coverage may be incomplete."
 
 
 def relative_age(posted_at: datetime | None, now: datetime | None = None) -> str:
@@ -61,6 +74,8 @@ def _facts(match: Match, now: datetime | None = None) -> list[str]:
     """The short metadata line shared by every rendering."""
     job = match.job
     parts = [job.location or "Location n/a", job.source]
+    if match.seniority and match.seniority != "unknown":
+        parts.append(match.seniority)
     age = relative_age(job.posted_at, now)
     if age:
         parts.append(age)
@@ -83,9 +98,12 @@ def _why(match: Match) -> str:
 
 def render_text(result: RunResult) -> str:
     lines = ["Opportunities Abroad — new matching jobs", header_line(result), ""]
+    warning = health_warning(result)
+    if warning:
+        lines.extend([warning, ""])
     if not result.matches:
         lines.append("No new matching jobs this run.")
-        lines.extend(["", FOOTER])
+        lines.extend(["", *_sources_block(result), FOOTER])
         return "\n".join(lines)
 
     lines.append(INTRO)
@@ -103,16 +121,27 @@ def render_text(result: RunResult) -> str:
             lines.append(f"  why: {_why(match)}")
             lines.append(f"  {job.url}")
             lines.append("")
+    lines.extend(_sources_block(result))
     lines.append(FOOTER)
     return "\n".join(lines)
+
+
+def _sources_block(result: RunResult) -> list[str]:
+    if not result.sources:
+        return []
+    return ["Sources", "-------", *source_lines(result), ""]
 
 
 def render_console(result: RunResult, *, dry_run: bool) -> str:
     """Terminal digest. Same grouping as the email, without the boilerplate."""
     mode = "DRY-RUN matches (not emailed)" if dry_run else "Sent matches"
     lines = ["", f"{mode}: {header_line(result)}"]
+    warning = health_warning(result)
+    if warning:
+        lines.append(warning)
     if not result.matches:
         lines.append("  (none)")
+        lines.extend(_console_sources(result))
         return "\n".join(lines)
     for country, entries in group_by_country(result.matches):
         lines.append("")
@@ -126,7 +155,14 @@ def render_console(result: RunResult, *, dry_run: bool) -> str:
                 lines.append(f"    {sponsorship}")
             lines.append(f"    why: {_why(match)}")
             lines.append(f"    {job.url}")
+    lines.extend(_console_sources(result))
     return "\n".join(lines)
+
+
+def _console_sources(result: RunResult) -> list[str]:
+    if not result.sources:
+        return []
+    return ["", "Sources", *[f"  {line}" for line in source_lines(result)]]
 
 
 def render_html(result: RunResult) -> str:
@@ -160,13 +196,31 @@ def render_html(result: RunResult) -> str:
         )
 
     body = "".join(sections) if sections else "<p>No new matching jobs this run.</p>"
+
+    warning = health_warning(result)
+    warning_html = (
+        f"<p style='padding:8px;background:#fff4e5;border-left:3px solid #d97706;'>"
+        f"{html.escape(warning)}</p>"
+        if warning
+        else ""
+    )
+    sources_html = (
+        "<h3 style='margin:24px 0 4px;'>Sources</h3><ul style='color:#666;font-size:12px;'>"
+        + "".join(f"<li>{html.escape(line)}</li>" for line in source_lines(result))
+        + "</ul>"
+        if result.sources
+        else ""
+    )
+
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Opportunities Abroad</title></head>
 <body style="font-family:sans-serif;max-width:720px;">
   <h2>Opportunities Abroad</h2>
   <p style="color:#444;">{html.escape(header_line(result))}</p>
+  {warning_html}
   <p style="color:#444;">{html.escape(INTRO)}</p>
   {body}
+  {sources_html}
   <p style="color:#888;font-size:12px;">{html.escape(FOOTER)}</p>
 </body></html>
 """

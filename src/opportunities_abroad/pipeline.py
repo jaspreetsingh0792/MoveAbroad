@@ -4,7 +4,7 @@ import logging
 
 from opportunities_abroad.classifier import VisaClassifier
 from opportunities_abroad.matcher import match_jobs_with_stats
-from opportunities_abroad.models import Job, RunResult
+from opportunities_abroad.models import Job, RunResult, SourceHealth
 from opportunities_abroad.notifiers.base import Notifier
 from opportunities_abroad.prefs import Prefs
 from opportunities_abroad.sources.base import JobSource
@@ -13,18 +13,26 @@ from opportunities_abroad.store.sqlite import SqliteJobStore
 logger = logging.getLogger(__name__)
 
 
-def fetch_all(sources: list[JobSource], prefs: Prefs) -> list[Job]:
+def fetch_all(sources: list[JobSource], prefs: Prefs) -> tuple[list[Job], list[SourceHealth]]:
+    """Fetch every source, reporting what each one managed.
+
+    A crashing source never sinks the run, but the run has to say so —
+    otherwise a dead source looks exactly like a quiet one.
+    """
     jobs: list[Job] = []
+    health: list[SourceHealth] = []
     for source in sources:
         logger.info("Fetching from %s", source.name)
         try:
             batch = source.fetch(prefs)
-        except Exception:
+        except Exception as exc:
             logger.exception("Source %s crashed; continuing", source.name)
-            batch = []
+            health.append(SourceHealth(name=source.name, failed=True, error=repr(exc)))
+            continue
         logger.info("%s: %s jobs", source.name, len(batch))
         jobs.extend(batch)
-    return jobs
+        health.append(source.health(len(batch)))
+    return jobs, health
 
 
 def run(
@@ -38,7 +46,10 @@ def run(
     mark_seen: bool = False,
     limit: int | None = None,
 ) -> RunResult:
-    jobs = fetch_all(sources, prefs)
+    jobs, source_health = fetch_all(sources, prefs)
+    for report in source_health:
+        if not report.healthy:
+            logger.warning("Source health: %s", report.summary())
     matches, stats = match_jobs_with_stats(jobs, prefs)
     logger.info("Matched %s / %s fetched jobs", len(matches), len(jobs))
 
@@ -65,7 +76,9 @@ def run(
         too_old=stats.too_old,
         rejected_location=stats.rejected_location,
         rejected_title=stats.rejected_title,
+        rejected_seniority=stats.rejected_seniority,
         rejected_visa=stats.rejected_visa,
+        sources=source_health,
     )
 
     if send:

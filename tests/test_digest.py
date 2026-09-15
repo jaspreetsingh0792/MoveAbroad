@@ -13,7 +13,7 @@ from opportunities_abroad.digest import (
     render_text,
     save_html,
 )
-from opportunities_abroad.models import Match, RunResult
+from opportunities_abroad.models import Match, RunResult, SourceHealth
 
 from tests.conftest import make_job
 
@@ -68,19 +68,20 @@ def result() -> RunResult:
         too_old=4,
         rejected_location=3,
         rejected_title=2,
+        rejected_seniority=1,
         rejected_visa=1,
     )
 
 
 def test_header_line_counts(result):
     assert header_line(result) == (
-        "3 new · 6 already seen · 4 too old · 6 rejected (US-only / title / visa)"
+        "3 new · 6 already seen · 4 too old · 7 rejected (US-only / title / seniority / visa)"
     )
 
 
 def test_header_line_with_nothing_new():
     assert header_line(RunResult()) == (
-        "0 new · 0 already seen · 0 too old · 0 rejected (US-only / title / visa)"
+        "0 new · 0 already seen · 0 too old · 0 rejected (US-only / title / seniority / visa)"
     )
 
 
@@ -178,6 +179,81 @@ def test_console_digest_marks_dry_run(result):
 
 def test_console_digest_when_empty():
     assert "(none)" in render_console(RunResult(), dry_run=True)
+
+
+def unhealthy_result() -> RunResult:
+    return RunResult(
+        matches=[a_match(location="Amsterdam")],
+        sources=[
+            SourceHealth(name="remotive", fetched=42),
+            SourceHealth(name="arbeitnow", failed=True, error="RuntimeError('boom')"),
+            SourceHealth(
+                name="greenhouse",
+                fetched=8,
+                boards_ok=["adyen", "mollie"],
+                boards_failed=["databricks"],
+            ),
+        ],
+    )
+
+
+def test_source_summaries_distinguish_dead_from_quiet():
+    healthy = SourceHealth(name="remotive", fetched=0)
+    dead = SourceHealth(name="remotive", failed=True, error="Timeout")
+    assert healthy.summary() == "remotive: 0 fetched"
+    assert healthy.healthy is True
+    assert "FAILED" in dead.summary()
+    assert dead.healthy is False
+
+
+def test_board_counts_appear_in_the_summary():
+    health = SourceHealth(
+        name="lever", fetched=3, boards_ok=["a", "b"], boards_failed=["c"]
+    )
+    assert "2/3 boards OK" in health.summary()
+    assert "failed: c" in health.summary()
+
+
+def test_text_digest_warns_and_lists_sources():
+    body = render_text(unhealthy_result())
+    assert "⚠ Source problems this run: arbeitnow, greenhouse" in body
+    assert "Sources" in body
+    assert "remotive: 42 fetched" in body
+    assert "arbeitnow: FAILED" in body
+    assert "2/3 boards OK" in body
+
+
+def test_console_digest_warns_and_lists_sources():
+    body = render_console(unhealthy_result(), dry_run=True)
+    assert "⚠ Source problems this run" in body
+    assert "arbeitnow: FAILED" in body
+
+
+def test_html_digest_warns_and_lists_sources():
+    body = render_html(unhealthy_result())
+    assert "Source problems this run" in body
+    assert "arbeitnow: FAILED" in body
+    assert "<h3" in body and "Sources" in body
+
+
+def test_healthy_run_shows_sources_without_a_warning():
+    result = RunResult(
+        matches=[a_match(location="Amsterdam")],
+        sources=[SourceHealth(name="remotive", fetched=42)],
+    )
+    for body in (render_text(result), render_console(result, dry_run=True), render_html(result)):
+        assert "Source problems" not in body
+        assert "remotive: 42 fetched" in body
+
+
+def test_empty_digest_still_reports_source_health():
+    result = RunResult(sources=[SourceHealth(name="lever", failed=True, error="gone")])
+    assert "lever: FAILED" in render_text(result)
+    assert "lever: FAILED" in render_console(result, dry_run=True)
+
+
+def test_digest_without_source_data_omits_the_section():
+    assert "Sources" not in render_text(RunResult())
 
 
 def test_save_html_creates_parent_directories(tmp_path, result):

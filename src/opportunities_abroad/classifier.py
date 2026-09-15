@@ -22,6 +22,35 @@ MAX_TOKENS = 200
 UNCLEAR = "unclear"
 VERDICTS = frozenset({"yes", "no", UNCLEAR})
 
+# Sponsorship language is as likely to sit in a closing "Immigration" or
+# "Equal Opportunity" section as in the opening paragraphs, so the excerpt
+# sent to the model is built around these rather than taken from the top.
+VISA_TERMS = (
+    "visa",
+    "sponsor",
+    "sponsorship",
+    "work permit",
+    "work authorisation",
+    "work authorization",
+    "right to work",
+    "eligible to work",
+    "authorised to work",
+    "authorized to work",
+    "relocation",
+    "relocate",
+    "blue card",
+    "highly skilled migrant",
+    "kennismigrant",
+    "immigration",
+    "30% ruling",
+    "residence permit",
+)
+_VISA_TERMS_RE = re.compile("|".join(re.escape(t) for t in VISA_TERMS), re.IGNORECASE)
+# Characters of context kept either side of a match.
+VISA_WINDOW_CHARS = 400
+# Opening text is always included: it usually carries the location and contract.
+VISA_HEAD_CHARS = 700
+
 SYSTEM_PROMPT = (
     "You read job postings and judge whether the employer will sponsor a work visa "
     "or offer relocation support for a candidate who needs a permit to work there. "
@@ -125,9 +154,50 @@ class VisaClassifier:
         return verdict, reason, True
 
 
+def visa_excerpt(description: str | None, budget: int = MAX_DESCRIPTION_CHARS) -> str:
+    """Excerpt the parts of a posting that bear on sponsorship.
+
+    Truncating the first N characters loses the closing "Immigration" or
+    "Equal Opportunity" paragraph where sponsorship is most often stated. This
+    keeps the opening for context and adds a window around each visa-related
+    mention, in document order, until the budget is spent.
+    """
+    text = (description or "").strip()
+    if len(text) <= budget:
+        return text
+
+    head = min(VISA_HEAD_CHARS, budget)
+    spans: list[tuple[int, int]] = [(0, head)]
+    for hit in _VISA_TERMS_RE.finditer(text, head):
+        start = max(head, hit.start() - VISA_WINDOW_CHARS)
+        end = min(len(text), hit.end() + VISA_WINDOW_CHARS)
+        spans.append((start, end))
+
+    merged: list[list[int]] = []
+    for start, end in spans:
+        if merged and start <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+
+    pieces: list[str] = []
+    used = 0
+    for start, end in merged:
+        if used >= budget:
+            break
+        chunk = text[start : min(end, start + (budget - used))]
+        if not chunk:
+            continue
+        pieces.append(chunk)
+        used += len(chunk)
+    if len(pieces) == 1:
+        return pieces[0]
+    return " […] ".join(pieces)
+
+
 def _prompt(match: Match) -> str:
     job = match.job
-    description = (job.description or "").strip()[:MAX_DESCRIPTION_CHARS]
+    description = visa_excerpt(job.description)
     return (
         f"Job title: {job.title}\n"
         f"Company: {job.company or 'unknown'}\n"

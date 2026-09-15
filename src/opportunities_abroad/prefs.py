@@ -20,6 +20,14 @@ DEFAULT_LOCATION_WEIGHTS: dict[str, int] = {
     "germany": 3,
     "europe": 3,
 }
+# How many hits of each kind can still earn score. Without a ceiling a posting
+# that lists twenty technologies outranks a well-matched role that names a few.
+# 0 means uncapped.
+DEFAULT_SCORE_CAPS: dict[str, int] = {
+    "title_hit": 3,
+    "keyword_hit": 4,
+    "visa_hit": 2,
+}
 ATS_NAMES = ("greenhouse", "lever", "ashby")
 
 
@@ -41,10 +49,13 @@ class Prefs:
     visa_require: bool = False
     visa_classifier: bool = False
     visa_classifier_model: str = "claude-sonnet-4-6"
+    seniority_allow: list[str] = field(default_factory=list)
+    seniority_keep_unknown: bool = True
     max_age_days: int = 14
     max_jobs: int = 25
     save_html_to: str | None = None
     score_weights: dict[str, int] = field(default_factory=lambda: dict(DEFAULT_SCORE_WEIGHTS))
+    score_caps: dict[str, int] = field(default_factory=lambda: dict(DEFAULT_SCORE_CAPS))
     location_weights: dict[str, int] = field(
         default_factory=lambda: dict(DEFAULT_LOCATION_WEIGHTS)
     )
@@ -66,6 +77,11 @@ class Prefs:
 
     def weight(self, name: str) -> int:
         return int(self.score_weights.get(name, DEFAULT_SCORE_WEIGHTS.get(name, 0)))
+
+    def scored_hits(self, name: str, hits: int) -> int:
+        """How many hits of this kind actually count toward the score."""
+        cap = int(self.score_caps.get(name, DEFAULT_SCORE_CAPS.get(name, 0)))
+        return hits if cap <= 0 else min(hits, cap)
 
 
 def load_prefs(path: str | Path) -> Prefs:
@@ -95,6 +111,7 @@ def prefs_from_dict(data: dict[str, Any]) -> Prefs:
     adzuna = data.get("adzuna") or {}
     arbeitnow = data.get("arbeitnow") or {}
     visa = data.get("visa") or {}
+    seniority = data.get("seniority") or {}
     http = data.get("http") or {}
 
     arbeitnow_visa = arbeitnow.get("visa_sponsorship", None)
@@ -120,10 +137,13 @@ def prefs_from_dict(data: dict[str, Any]) -> Prefs:
         visa_require=bool(visa.get("require", False)),
         visa_classifier=bool(visa.get("classifier", False)),
         visa_classifier_model=str(visa.get("classifier_model") or "claude-sonnet-4-6"),
+        seniority_allow=[s.lower() for s in _str_list(seniority.get("allow"))],
+        seniority_keep_unknown=bool(seniority.get("keep_unknown", True)),
         max_age_days=int(data.get("max_age_days", 14)),
         max_jobs=int(digest.get("max_jobs", 25)),
         save_html_to=str(save_html_to) if save_html_to else None,
         score_weights=_int_map(data.get("score_weights"), DEFAULT_SCORE_WEIGHTS),
+        score_caps=_int_map(data.get("score_caps"), DEFAULT_SCORE_CAPS),
         location_weights=_int_map(
             data.get("location_weights"), DEFAULT_LOCATION_WEIGHTS, replace=True
         ),
