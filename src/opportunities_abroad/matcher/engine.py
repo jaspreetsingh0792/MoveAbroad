@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 from opportunities_abroad.models import Job, Match
 from opportunities_abroad.prefs import Prefs
@@ -76,34 +78,68 @@ _ONSITE_HINT_RE = re.compile(
 )
 
 
+@dataclass(slots=True)
+class MatchStats:
+    """Why jobs were dropped, so the digest can report more than a bare count."""
+
+    too_old: int = 0
+    rejected_location: int = 0
+    rejected_title: int = 0
+    rejected_visa: int = 0
+
+
 def match_jobs(jobs: list[Job], prefs: Prefs) -> list[Match]:
     """Return all matching jobs, highest score first. Does not slice to max_jobs."""
-    matches: list[Match] = []
-    for job in jobs:
-        result = score_job(job, prefs)
-        if result is not None:
-            matches.append(result)
-    matches.sort(key=lambda m: (-m.score, m.job.title.lower()))
+    matches, _ = match_jobs_with_stats(jobs, prefs)
     return matches
 
 
-def score_job(job: Job, prefs: Prefs) -> Match | None:
+def match_jobs_with_stats(jobs: list[Job], prefs: Prefs) -> tuple[list[Match], MatchStats]:
+    """Match every job and report why the rest were dropped."""
+    stats = MatchStats()
+    matches: list[Match] = []
+    for job in jobs:
+        result = score_job(job, prefs, stats=stats)
+        if result is not None:
+            matches.append(result)
+    matches.sort(key=lambda m: (-m.score, m.job.title.lower()))
+    return matches, stats
+
+
+def score_job(job: Job, prefs: Prefs, *, stats: MatchStats | None = None) -> Match | None:
     haystack = strip_html(job.searchable_text).lower()
     title_l = job.title.lower()
     location_l = (job.location or "").lower()
+
+    if _is_too_old(job, prefs.max_age_days):
+        _count(stats, "too_old")
+        return None
 
     for kw in prefs.exclude_keywords:
         if kw and _phrase_in(haystack, kw):
             return None
 
+    if _keyword_hits(prefs.title_exclude, title_l):
+        _count(stats, "rejected_title")
+        return None
+    if prefs.title_include and not _keyword_hits(prefs.title_include, title_l):
+        _count(stats, "rejected_title")
+        return None
+
     include_hits = _keyword_hits(prefs.include_keywords, haystack)
     if prefs.include_keywords and not include_hits:
+        return None
+
+    visa_hits = _keyword_hits(prefs.visa_keywords, haystack)
+    if prefs.visa_require and job.visa_sponsorship is not True and not visa_hits:
+        _count(stats, "rejected_visa")
         return None
 
     remote = _is_remote(job, haystack)
     hybrid = bool(_HYBRID_HINT_RE.search(haystack))
 
     if prefs.remote_only and not remote:
+        _count(stats, "rejected_location")
         return None
 
     mode_ok = False
@@ -113,6 +149,7 @@ def score_job(job: Job, prefs: Prefs) -> Match | None:
             mode_ok = True
             reasons.append("remote")
         elif not prefs.accept_onsite and not prefs.accept_hybrid:
+            _count(stats, "rejected_location")
             return None
 
     if hybrid and prefs.accept_hybrid and _geo_matches(job, prefs, location_l, haystack):
@@ -125,36 +162,88 @@ def score_job(job: Job, prefs: Prefs) -> Match | None:
             reasons.append("onsite")
 
     # Hybrid/onsite already handled. A remote job in a target city can also count as onsite-friendly.
-    if (
-        not mode_ok
-        and prefs.accept_onsite
-        and _geo_matches(job, prefs, location_l, location_l)
-    ):
+    if not mode_ok and prefs.accept_onsite and _geo_matches(job, prefs, location_l, location_l):
         mode_ok = True
         reasons.append("onsite")
 
     if not mode_ok:
+        _count(stats, "rejected_location")
         return None
 
-    score = 0
     title_hits = _keyword_hits(prefs.include_keywords, title_l)
-    score += 8 * len(title_hits)
-    score += 3 * len(include_hits)
+    score = prefs.weight("title_hit") * len(title_hits)
+    score += prefs.weight("keyword_hit") * len(include_hits)
     if remote:
-        score += 4
-    visa_hits = _keyword_hits(prefs.visa_keywords, haystack)
-    score += 5 * len(visa_hits)
-    if any(token in location_l for token in ("netherlands", "amsterdam", "holland")):
-        score += 6
-    elif any(token in location_l for token in ("europe", "eu", "germany", "berlin")):
-        score += 3
+        score += prefs.weight("remote")
+    score += prefs.weight("visa_hit") * len(visa_hits)
+    score += location_bonus(location_l, prefs.location_weights)
 
     if include_hits:
         reasons.append("keywords:" + ",".join(include_hits[:5]))
     if visa_hits:
         reasons.append("visa:" + ",".join(visa_hits[:3]))
+    elif job.visa_sponsorship is True:
+        reasons.append("visa:source-flagged")
 
     return Match(job=job, score=score, reasons=reasons)
+
+
+def location_bonus(location_l: str, weights: dict[str, int]) -> int:
+    """Best single weight whose country/city tokens appear in the location.
+
+    Only the strongest match counts, so a city weight does not stack on top of
+    its country's.
+    """
+    best = 0
+    for name, weight in weights.items():
+        for token in _weight_tokens(name):
+            if _phrase_in(location_l, token):
+                best = max(best, weight)
+                break
+    return best
+
+
+def country_for_location(location: str, remote: bool = False) -> str:
+    """Bucket a job for the digest: a country name, then Europe, Remote, or Other."""
+    location_l = (location or "").lower()
+    segments = {s.strip() for s in re.split(r"[,/|()\-–—]", location_l) if s.strip()}
+    generic = {"eu", "europe"}
+    for country, aliases in COUNTRY_ALIASES.items():
+        if country in generic:
+            continue
+        for alias in aliases:
+            # Two-letter aliases are too noisy inside prose; require a whole segment.
+            if len(alias) <= 2:
+                if alias in segments:
+                    return country.title()
+            elif _phrase_in(location_l, alias):
+                return country.title()
+    for alias in COUNTRY_ALIASES["europe"] | COUNTRY_ALIASES["eu"]:
+        if len(alias) > 2 and _phrase_in(location_l, alias):
+            return "Europe"
+    if remote:
+        return "Remote"
+    return "Other"
+
+
+def _weight_tokens(name: str) -> set[str]:
+    key = name.lower().strip()
+    return COUNTRY_ALIASES.get(key, {key}) if key else set()
+
+
+def _count(stats: MatchStats | None, field_name: str) -> None:
+    if stats is not None:
+        setattr(stats, field_name, getattr(stats, field_name) + 1)
+
+
+def _is_too_old(job: Job, max_age_days: int) -> bool:
+    """Only drop jobs whose age is actually known; undated postings pass through."""
+    if max_age_days <= 0 or job.posted_at is None:
+        return False
+    posted = job.posted_at
+    if posted.tzinfo is None:
+        posted = posted.replace(tzinfo=timezone.utc)
+    return posted < datetime.now(timezone.utc) - timedelta(days=max_age_days)
 
 
 def _phrase_in(text: str, phrase: str) -> bool:
