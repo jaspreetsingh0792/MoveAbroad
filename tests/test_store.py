@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-from opportunities_abroad.store.sqlite import SqliteJobStore
+from opportunities_abroad.store.sqlite import FINGERPRINT_VERSION, SqliteJobStore
 from opportunities_abroad.textutil import fingerprint
 
 from tests.conftest import make_job
@@ -164,15 +164,47 @@ def test_location_spelling_differences_still_collapse(tmp_path):
     store.close()
 
 
-def test_fingerprint_is_scoped_to_host(tmp_path):
+def test_aggregator_repost_on_another_host_is_deduped(tmp_path):
+    """The case the fingerprint exists for: one role, company board + aggregator.
+
+    An aggregator republishes under its own domain, so the identity cannot be
+    scoped by URL host or it would only ever agree where the URL already does.
+    """
     store = SqliteJobStore(tmp_path / "seen.db")
-    store.mark_seen([make_job(url="https://boards.greenhouse.io/acme/jobs/1")])
-    elsewhere = make_job(
-        source="lever",
-        source_id="other:2",
-        url="https://jobs.lever.co/acme/2",
+    company_board = make_job(
+        source="greenhouse",
+        source_id="acme:1",
+        company="Databricks",
+        title="Software Engineer",
+        location="Amsterdam",
+        url="https://boards.greenhouse.io/databricks/jobs/1",
     )
-    assert store.is_seen(elsewhere) is False
+    aggregator = make_job(
+        source="arbeitnow",
+        source_id="databricks-software-engineer",
+        company="Databricks",
+        title="Software Engineer",
+        location="Amsterdam, Netherlands",
+        url="https://www.arbeitnow.com/jobs/databricks-software-engineer",
+    )
+    store.mark_seen([company_board])
+    assert store.is_seen(aggregator) is True
+    assert store.filter_new([aggregator]) == []
+    store.close()
+
+
+def test_different_companies_sharing_a_title_do_not_collide(tmp_path):
+    """Company is in the seed, which is what the host used to guard against."""
+    store = SqliteJobStore(tmp_path / "seen.db")
+    store.mark_seen([make_job(company="Acme", title="Software Engineer", location="Amsterdam")])
+    other_firm = make_job(
+        company="Globex",
+        source_id="2",
+        title="Software Engineer",
+        location="Amsterdam",
+        url="https://globex.example/jobs/2",
+    )
+    assert store.is_seen(other_firm) is False
     store.close()
 
 
@@ -229,9 +261,7 @@ def test_migrates_legacy_database_and_backfills(tmp_path):
     # A legacy row has no stored location, so its fingerprint is computed with
     # the "Other" bucket. Key and URL matching still protect it.
     assert row["location"] is None
-    assert row["fingerprint"] == fingerprint(
-        "Acme", "Python Software Engineer", "example.com", "Other"
-    )
+    assert row["fingerprint"] == fingerprint("Acme", "Python Software Engineer", "Other")
     assert store.is_seen(make_job(source="remotive", source_id="1")) is True
     assert store.is_seen(make_job(source="lever", source_id="9")) is True
     store.close()
@@ -270,6 +300,38 @@ def test_rewritten_rows_gain_full_fingerprint_protection(tmp_path):
     reposted = make_job(source="lever", source_id="9", url="https://example.com/jobs/other")
     assert store.is_seen(reposted) is True
     store.close()
+
+
+def test_fingerprint_version_bump_recomputes_stale_identities(tmp_path):
+    """A changed seed must not leave identities nothing will ever match."""
+    path = tmp_path / "seen.db"
+    store = SqliteJobStore(path)
+    store.mark_seen([make_job(location="Amsterdam")])
+    store._conn.execute("UPDATE seen_jobs SET fingerprint = 'stale-value'")
+    store._conn.execute("UPDATE meta SET value = '0' WHERE key = 'fingerprint_version'")
+    store._conn.commit()
+    store.close()
+
+    reopened = SqliteJobStore(path)
+    row = reopened._conn.execute("SELECT fingerprint FROM seen_jobs").fetchone()
+    assert row["fingerprint"] != "stale-value"
+    assert reopened._get_meta("fingerprint_version") == FINGERPRINT_VERSION
+    # The recomputed identity matches a fresh read of the same job.
+    assert reopened.is_seen(make_job(source="lever", source_id="9", url="https://x.tld/9")) is True
+    reopened.close()
+
+
+def test_reopening_an_unchanged_database_does_not_rewrite(tmp_path):
+    path = tmp_path / "seen.db"
+    first = SqliteJobStore(path)
+    first.mark_seen([make_job()])
+    before = first._conn.execute("SELECT fingerprint FROM seen_jobs").fetchone()["fingerprint"]
+    first.close()
+
+    second = SqliteJobStore(path)
+    after = second._conn.execute("SELECT fingerprint FROM seen_jobs").fetchone()["fingerprint"]
+    assert after == before
+    second.close()
 
 
 def test_migration_is_idempotent(tmp_path):

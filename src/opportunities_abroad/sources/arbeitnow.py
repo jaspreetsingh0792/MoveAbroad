@@ -10,6 +10,7 @@ from opportunities_abroad.http import make_client
 from opportunities_abroad.models import Job
 from opportunities_abroad.prefs import Prefs
 from opportunities_abroad.sources.base import JobSource
+from opportunities_abroad.sources.payload import records
 from opportunities_abroad.textutil import strip_html
 
 logger = logging.getLogger(__name__)
@@ -48,14 +49,19 @@ class ArbeitnowSource(JobSource):
                 except Exception:
                     logger.exception("Arbeitnow fetch failed on page %s", page)
                     break
-                items = payload.get("data") or []
+                items = records(payload, "data")
                 if not items:
                     break
                 for item in items:
-                    job = self._to_job(item)
+                    try:
+                        job = self._to_job(item)
+                    except Exception:
+                        logger.exception("Arbeitnow could not map a record")
+                        continue
                     if job is not None:
                         jobs.append(job)
-                next_link = (payload.get("links") or {}).get("next")
+                links = payload.get("links") if isinstance(payload, dict) else None
+                next_link = (links or {}).get("next") if isinstance(links, dict) else None
                 if not next_link:
                     break
                 if page < max_pages:

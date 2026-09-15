@@ -8,6 +8,10 @@ from opportunities_abroad.matcher.engine import place_key
 from opportunities_abroad.models import Job
 from opportunities_abroad.textutil import fingerprint, normalize_url
 
+# Bumped whenever the fingerprint seed changes, so existing databases
+# recompute instead of silently holding identities nothing will ever match.
+FINGERPRINT_VERSION = "2"
+
 
 def job_fingerprint(job: Job) -> str:
     """Cross-source identity for a job.
@@ -20,7 +24,6 @@ def job_fingerprint(job: Job) -> str:
     return fingerprint(
         job.company,
         job.title,
-        job.url,
         place_key(job.location, remote=job.remote is True),
     )
 
@@ -70,6 +73,11 @@ class SqliteJobStore:
                 model TEXT,
                 checked_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
             """
         )
         self._migrate()
@@ -78,33 +86,37 @@ class SqliteJobStore:
     def _migrate(self) -> None:
         """Bring a database written by an older version up to the current schema."""
         columns = {row["name"] for row in self._conn.execute("PRAGMA table_info(seen_jobs)")}
-        stale = False
         if "fingerprint" not in columns:
             self._conn.execute("ALTER TABLE seen_jobs ADD COLUMN fingerprint TEXT")
-            stale = True
         if "location" not in columns:
-            # Fingerprints predating this column were computed without a
-            # locale, so they have to be recomputed on the same terms.
             self._conn.execute("ALTER TABLE seen_jobs ADD COLUMN location TEXT")
-            stale = True
-        if stale:
+
+        if self._get_meta("fingerprint_version") != FINGERPRINT_VERSION:
             self._backfill_fingerprints()
+            self._set_meta("fingerprint_version", FINGERPRINT_VERSION)
+
         self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_seen_fingerprint ON seen_jobs(fingerprint)"
         )
 
+    def _get_meta(self, key: str) -> str | None:
+        row = self._conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else None
+
+    def _set_meta(self, key: str, value: str) -> None:
+        self._conn.execute(
+            "INSERT INTO meta (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value),
+        )
+
     def _backfill_fingerprints(self) -> None:
         rows = self._conn.execute(
-            "SELECT job_key, company, title, url, location FROM seen_jobs"
+            "SELECT job_key, company, title, location FROM seen_jobs"
         ).fetchall()
         updates = [
             (
-                fingerprint(
-                    row["company"],
-                    row["title"],
-                    row["url"],
-                    place_key(row["location"] or ""),
-                ),
+                fingerprint(row["company"], row["title"], place_key(row["location"] or "")),
                 row["job_key"],
             )
             for row in rows
