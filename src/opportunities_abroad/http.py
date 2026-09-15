@@ -5,8 +5,7 @@ import os
 import httpx
 
 DEFAULT_USER_AGENT = (
-    "opportunities-abroad/0.1 "
-    "(+https://github.com/jaspreetsingh0792/opportunities-abroad)"
+    "moveabroad/0.1 (+https://github.com/jaspreetsingh0792/opportunities-abroad)"
 )
 
 

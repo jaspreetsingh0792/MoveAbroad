@@ -95,6 +95,10 @@ class RunResult:
     fetched: int = 0
     matched: int = 0
     already_seen: int = 0
+    # New matches that did not fit under max_jobs. They are deliberately left
+    # unmarked so they surface on a later run, but a backlog that never drains
+    # means jobs can age out of max_age_days before they are ever shown.
+    backlog: int = 0
     too_old: int = 0
     rejected_location: int = 0
     rejected_title: int = 0
