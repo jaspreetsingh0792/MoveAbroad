@@ -67,10 +67,21 @@ drop (already seen, too old, rejected), which is what the header line reports.
 
 A job is considered already seen when **any** of these match a stored row: its
 `source:id` key, its normalized URL, or a fingerprint of normalized company and
-title scoped by URL host. The fingerprint is what stops the same role alerting
-twice when it appears both on a company's own board and through an aggregator.
+title, scoped by URL host **and country**. The fingerprint is what stops the
+same role alerting twice when it appears both on a company's own board and
+through an aggregator.
+
+Location takes part in the identity so that one company advertising the same
+title in two countries stays two openings — losing a real opening is worse than
+an extra email. It is reduced to a country bucket first, because sources spell
+places differently (`Amsterdam` vs `Amsterdam, Netherlands`) and matching the
+raw string would defeat the dedupe entirely. The residual tradeoff: two
+openings with the same title in the same country still collapse.
+
 Postings with no company or title simply have no fingerprint rather than
-colliding with each other.
+colliding with each other. Databases written before this carry no location, so
+the migration recomputes their fingerprints on the same terms; they keep
+deduping by key and URL until they are next seen with one.
 
 ## Requirements
 
@@ -123,6 +134,7 @@ Useful flags:
 | `--mark-seen` | Dry-run but still record matches so the next run skips them |
 | `--limit N` | Cap the digest |
 | `--save-html PATH` | Write the rendered HTML digest to `PATH` on every run, dry-run included (same as `digest.save_html_to`) |
+| `--fail-on-source-error` | Exit non-zero if any source or board failed, so a scheduled run goes red |
 | `-v` | Debug logging |
 
 Every run opens with a line accounting for the whole batch:
@@ -136,14 +148,51 @@ remote roles and `Other` as a fallback), highest score first, each entry
 showing how old the posting is, its salary when published, the source, the
 sponsorship verdict when the classifier ran, and why it matched.
 
+### Source health
+
+A failing source is the one error that hides well: sources swallow their
+failures so one bad feed cannot sink a run, which means a dead source looks
+exactly like a quiet one. Every digest therefore ends with per-source
+accounting, and leads with a warning when something is broken:
+
+```
+⚠ Source problems this run: arbeitnow, greenhouse. Coverage may be incomplete.
+
+Sources
+-------
+remotive: 42 fetched
+arbeitnow: FAILED (ReadTimeout)
+greenhouse: 31 fetched, 3/4 boards OK — failed: databricks
+```
+
+That names the broken board slug, so a slug that quietly stopped working is
+visible the next morning rather than months later. `--fail-on-source-error`
+turns it into a non-zero exit for scheduled runs.
+
+### How a job is matched
+
+Geography is a hard filter and comes **only from the job's `location` field**.
+A posting located in Austin whose description mentions colleagues in Amsterdam
+is an Austin job. Description text still informs remote policy, which is a
+separate question — whether you are *eligible*, not where the role *is*.
+
+The order is: freshness → title → keywords → sponsorship → work mode and
+geography → dedupe → ranking.
+
 ### Scheduling
 
 #### GitHub Actions (recommended)
 
 `.github/workflows/digest.yml` runs `--send` at 06:00 UTC Monday–Friday and can
-also be triggered by hand from the Actions tab. After each run it commits
-`data/seen_jobs.db` back to the repository so the next run knows what has
-already been alerted; if nothing changed it skips the commit.
+also be triggered by hand from the Actions tab.
+
+Alert history is state, not source, so `data/seen_jobs.db` is kept in the
+**Actions cache** rather than committed back — the repository stays free of a
+daily binary and your alert history stays out of public git history. The
+workflow therefore only needs `contents: read`. A cache miss (GitHub evicts
+entries after 7 days without a hit, which a weekday schedule avoids) costs one
+repeated digest, never a wrong one. The save step runs even when the digest
+step fails, so a partial run does not re-alert what it already emailed.
 
 Add these repository secrets (Settings → Secrets and variables → Actions):
 
@@ -172,8 +221,9 @@ secret is missing:
   run: printf '%s\n' "$PREFS_YAML" > prefs.yaml
 ```
 
-Because the run commits to the default branch, the workflow needs
-`permissions: contents: write`, which it declares.
+The scheduled run passes `--fail-on-source-error`, so the digest is still
+emailed but the run goes red when a source or board breaks — see
+[Source health](#source-health).
 
 #### Cron
 
@@ -192,7 +242,7 @@ Once a day is plenty (Remotive listings are themselves delayed). Example:
 See `prefs.example.yaml`. Highlights:
 
 - `include_keywords` / `exclude_keywords` — phrase match with word boundaries (`intern` will not drop `international`)
-- `title_include` / `title_exclude` — the same matching, against the title only. The sample excludes junior, working student, trainee and intern titles
+- `title_include` / `title_exclude` — the same matching, against the title only. `title_include` is a hard filter: the sample requires a technical role family (engineer, developer, SRE, architect, …) so a Product Manager posting that merely mentions Python cannot pass. `title_exclude` drops junior, working student, trainee and intern titles
 - `max_age_days` — drop postings older than this when the source publishes a date (default `14`, `0` disables)
 - `locations.countries` / `cities` — onsite/hybrid geography (aliases like NL → Netherlands/Amsterdam are built in)
 - `work_mode.remote` / `hybrid` / `onsite` / `remote_only`
@@ -200,6 +250,7 @@ See `prefs.example.yaml`. Highlights:
 - `visa_keywords` — ranking boost only
 - `visa.require` / `visa.classifier` — see [Visa sponsorship](#visa-sponsorship)
 - `score_weights` — `title_hit` (8), `keyword_hit` (3), `remote` (4), `visa_hit` (5). Override individually; anything you omit keeps its default
+- `score_caps` — how many hits of each kind still earn score: `title_hit` (3), `keyword_hit` (4), `visa_hit` (2), `0` for uncapped. Without a ceiling a posting listing twenty technologies outranks a well-matched role naming a few
 - `location_weights` — country or city → bonus, matched against the job's location. Country names expand through the same aliases. Only the best single match applies, so a city bonus never stacks on its country's. Supplying this map replaces the defaults (`Netherlands: 6`, `Germany: 3`, `Europe: 3`) rather than merging, so you can drop entries
 - `digest.max_jobs` / `digest.save_html_to`
 - `sources.*` — toggle any source by name

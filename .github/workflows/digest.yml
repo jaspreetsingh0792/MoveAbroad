@@ -6,9 +6,9 @@ on:
     - cron: "0 6 * * 1-5"
   workflow_dispatch:
 
-# Needed to commit the seen-job database back to the branch.
+# Read-only: the seen-job database lives in the Actions cache, not in git.
 permissions:
-  contents: write
+  contents: read
 
 # Two runs writing the database at once would lose one side's history.
 concurrency:
@@ -34,6 +34,19 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e .
 
+      # Alert history is state, not source. Keeping it in the cache keeps it
+      # out of the public repo and stops git history growing a binary a day.
+      # A cache miss (eviction after 7 idle days) costs one repeated digest,
+      # never a wrong one.
+      - name: Restore the seen-job database
+        id: seen-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: data/seen_jobs.db
+          key: seen-jobs-${{ github.run_id }}
+          restore-keys: |
+            seen-jobs-
+
       - name: Write prefs.yaml from the PREFS_YAML secret
         env:
           PREFS_YAML: ${{ secrets.PREFS_YAML }}
@@ -56,18 +69,15 @@ jobs:
           ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}
           ADZUNA_API_KEY: ${{ secrets.ADZUNA_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: python -m opportunities_abroad --send --prefs prefs.yaml
+        # The digest is emailed either way; the flag turns a broken source into
+        # a red run so silent loss of coverage is noticed.
+        run: python -m opportunities_abroad --send --prefs prefs.yaml --fail-on-source-error
 
+      # Always saved, even if the digest step failed, so a partial run does not
+      # re-alert everything it already emailed.
       - name: Persist the seen-job database
-        run: |
-          # The database is gitignored for local use, so force-add it here and
-          # let the staged diff decide whether anything actually changed.
-          git add --force data/seen_jobs.db
-          if git diff --cached --quiet; then
-            echo "Seen-job database unchanged; nothing to commit."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "chore: update seen-job database [skip ci]"
-          git push
+        if: always() && hashFiles('data/seen_jobs.db') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: data/seen_jobs.db
+          key: seen-jobs-${{ github.run_id }}
