@@ -54,7 +54,7 @@ prefs.yaml  +  public APIs
 Pluggable packages:
 
 - `opportunities_abroad.sources` — `JobSource.fetch(prefs) -> list[Job]`
-- `opportunities_abroad.matcher` — keywords, titles, geo, remote vs onsite, age
+- `opportunities_abroad.matcher` — keywords, titles, seniority, geo, remote vs onsite, age
 - `opportunities_abroad.store` — SQLite seen-job keys, normalized URLs, cross-source fingerprints
 - `opportunities_abroad.digest` — country grouping and rendering, shared by email and the CLI
 - `opportunities_abroad.classifier` — optional visa-sponsorship verdicts
@@ -66,22 +66,29 @@ drop (already seen, too old, rejected), which is what the header line reports.
 ### De-duplication
 
 A job is considered already seen when **any** of these match a stored row: its
-`source:id` key, its normalized URL, or a fingerprint of normalized company and
-title, scoped by URL host **and country**. The fingerprint is what stops the
-same role alerting twice when it appears both on a company's own board and
-through an aggregator.
+`source:id` key, its normalized URL, or a fingerprint of normalized company,
+title and place. The fingerprint is what stops the same role alerting twice
+when it appears both on a company's own board and through an aggregator.
+
+The URL host is deliberately **not** part of the fingerprint: an aggregator
+republishes a role under its own domain, which is the very case this exists to
+catch, so including the host would make the identity agree only where the URL
+already does. Company is in the seed, which covers the "two firms, one job
+title" collision the host would otherwise guard against.
 
 Location takes part in the identity so that one company advertising the same
-title in two countries stays two openings — losing a real opening is worse than
-an extra email. It is reduced to a country bucket first, because sources spell
-places differently (`Amsterdam` vs `Amsterdam, Netherlands`) and matching the
-raw string would defeat the dedupe entirely. The residual tradeoff: two
-openings with the same title in the same country still collapse.
+title in two places stays two openings — losing a real opening is worse than an
+extra email. It is reduced to a **place key** first: country names and codes
+are stripped, so `Amsterdam`, `Amsterdam, NL` and `Amsterdam, Netherlands`
+agree while Amsterdam and Rotterdam do not. A location naming only a country
+falls back to the country, since there is nothing finer to key on.
 
 Postings with no company or title simply have no fingerprint rather than
-colliding with each other. Databases written before this carry no location, so
-the migration recomputes their fingerprints on the same terms; they keep
-deduping by key and URL until they are next seen with one.
+colliding with each other. The store records which fingerprint recipe wrote a
+database and recomputes on open when the recipe changes, so an upgrade never
+leaves identities that nothing will ever match. Rows migrated from before the
+location was stored fall back to the country bucket until they are next seen
+with one.
 
 ## Requirements
 
@@ -162,12 +169,15 @@ Sources
 -------
 remotive: 42 fetched
 arbeitnow: FAILED (ReadTimeout)
-greenhouse: 31 fetched, 3/4 boards OK — failed: databricks
+greenhouse: 31 fetched, 3/4 boards OK — failed: databricks, 2 unreadable record(s)
 ```
 
 That names the broken board slug, so a slug that quietly stopped working is
-visible the next morning rather than months later. `--fail-on-source-error`
-turns it into a non-zero exit for scheduled runs.
+visible the next morning rather than months later. These are public APIs that
+change without notice, so a record whose shape the mapper cannot read costs
+that record rather than the board — but it is counted, not swallowed.
+`--fail-on-source-error` turns any of this into a non-zero exit for scheduled
+runs.
 
 ### How a job is matched
 
@@ -176,8 +186,16 @@ A posting located in Austin whose description mentions colleagues in Amsterdam
 is an Austin job. Description text still informs remote policy, which is a
 separate question — whether you are *eligible*, not where the role *is*.
 
-The order is: freshness → title → keywords → sponsorship → work mode and
-geography → dedupe → ranking.
+The order is: freshness → title → seniority → keywords → sponsorship → work
+mode and geography → dedupe → ranking.
+
+**Seniority** is read from the title rather than only excluded as a string, so
+it can be filtered on and shown. Levels are `intern`, `junior`, `mid`,
+`senior`, `staff`, `principal`, `lead`, `executive`; `Engineer I` reads as
+junior and `Engineer II` as mid. A title that names no level classifies as
+`unknown` and is kept unless `seniority.keep_unknown` is false — plenty of good
+roles are titled just "Software Engineer", and dropping those silently is the
+worse error.
 
 ### Scheduling
 
@@ -244,6 +262,7 @@ See `prefs.example.yaml`. Highlights:
 - `include_keywords` / `exclude_keywords` — phrase match with word boundaries (`intern` will not drop `international`)
 - `title_include` / `title_exclude` — the same matching, against the title only. `title_include` is a hard filter: the sample requires a technical role family (engineer, developer, SRE, architect, …) so a Product Manager posting that merely mentions Python cannot pass. `title_exclude` drops junior, working student, trainee and intern titles
 - `max_age_days` — drop postings older than this when the source publishes a date (default `14`, `0` disables)
+- `seniority.allow` / `seniority.keep_unknown` — levels to accept, and whether titles that name no level survive (default: yes)
 - `locations.countries` / `cities` — onsite/hybrid geography (aliases like NL → Netherlands/Amsterdam are built in)
 - `work_mode.remote` / `hybrid` / `onsite` / `remote_only`
 - `remote.accept_locations` / `reject_locations` — candidate-location strings on remote jobs
@@ -353,7 +372,8 @@ src/opportunities_abroad/
   cli.py              # argparse entry (`python -m opportunities_abroad`)
   pipeline.py         # fetch → match → dedupe → classify → notify
   prefs.py            # YAML/JSON preferences
-  models.py           # Job, Match, RunResult
+  models.py           # Job, Match, RunResult, SourceHealth
+  seniority.py        # level classification from a job title
   digest.py           # grouping + text/HTML/console rendering
   classifier.py       # optional visa-sponsorship verdicts
   sources/            # remotive, arbeitnow, adzuna, greenhouse, lever, ashby

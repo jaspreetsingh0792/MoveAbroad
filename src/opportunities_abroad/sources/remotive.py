@@ -9,6 +9,7 @@ from opportunities_abroad.http import make_client
 from opportunities_abroad.models import Job
 from opportunities_abroad.prefs import Prefs
 from opportunities_abroad.sources.base import JobSource
+from opportunities_abroad.sources.payload import records
 from opportunities_abroad.textutil import strip_html
 
 logger = logging.getLogger(__name__)
@@ -46,8 +47,12 @@ class RemotiveSource(JobSource):
             payload.get("total-job-count"),
         )
         jobs: list[Job] = []
-        for item in payload.get("jobs") or []:
-            job = self._to_job(item)
+        for item in records(payload, "jobs"):
+            try:
+                job = self._to_job(item)
+            except Exception:
+                logger.exception("Remotive could not map a record")
+                continue
             if job is None:
                 continue
             category = str(item.get("category") or "").lower()

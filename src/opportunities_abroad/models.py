@@ -66,21 +66,25 @@ class SourceHealth:
     error: str = ""
     boards_ok: list[str] = field(default_factory=list)
     boards_failed: list[str] = field(default_factory=list)
+    records_skipped: int = 0
 
     @property
     def healthy(self) -> bool:
-        return not self.failed and not self.boards_failed
+        return not self.failed and not self.boards_failed and not self.records_skipped
 
     def summary(self) -> str:
         if self.failed:
             return f"{self.name}: FAILED ({self.error or 'unknown error'})"
+        parts = [f"{self.fetched} fetched"]
         total_boards = len(self.boards_ok) + len(self.boards_failed)
         if total_boards:
             detail = f"{len(self.boards_ok)}/{total_boards} boards OK"
             if self.boards_failed:
                 detail += f" — failed: {', '.join(sorted(self.boards_failed))}"
-            return f"{self.name}: {self.fetched} fetched, {detail}"
-        return f"{self.name}: {self.fetched} fetched"
+            parts.append(detail)
+        if self.records_skipped:
+            parts.append(f"{self.records_skipped} unreadable record(s)")
+        return f"{self.name}: {', '.join(parts)}"
 
 
 @dataclass(slots=True)

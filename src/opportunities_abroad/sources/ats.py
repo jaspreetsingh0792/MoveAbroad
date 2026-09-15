@@ -11,6 +11,7 @@ from opportunities_abroad.http import make_client
 from opportunities_abroad.models import Job, SourceHealth
 from opportunities_abroad.prefs import Prefs
 from opportunities_abroad.sources.base import JobSource
+from opportunities_abroad.sources.payload import records
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,7 @@ class AtsBoardSource(JobSource):
         self._client = client
         self._boards_ok: list[str] = []
         self._boards_failed: list[str] = []
+        self._records_skipped = 0
 
     def health(self, fetched: int) -> SourceHealth:
         return SourceHealth(
@@ -36,6 +38,7 @@ class AtsBoardSource(JobSource):
             fetched=fetched,
             boards_ok=list(self._boards_ok),
             boards_failed=list(self._boards_failed),
+            records_skipped=self._records_skipped,
         )
 
     @abstractmethod
@@ -49,13 +52,7 @@ class AtsBoardSource(JobSource):
     @staticmethod
     def extract_items(payload: object) -> list[dict]:
         """Boards return either a bare list or an object with a ``jobs`` list."""
-        if isinstance(payload, list):
-            items = payload
-        elif isinstance(payload, dict):
-            items = payload.get("jobs") or []
-        else:
-            items = []
-        return [item for item in items if isinstance(item, dict)]
+        return records(payload, "jobs")
 
     def fetch(self, prefs: Prefs) -> list[Job]:
         boards = prefs.boards_for(self.name)
@@ -67,6 +64,7 @@ class AtsBoardSource(JobSource):
         jobs: list[Job] = []
         self._boards_ok = []
         self._boards_failed = []
+        self._records_skipped = 0
         try:
             for index, board in enumerate(boards):
                 if index:
@@ -89,7 +87,13 @@ class AtsBoardSource(JobSource):
             return []
         jobs = []
         for item in self.extract_items(payload):
-            job = self.to_job(item, board)
+            # One record with an unexpected shape must not cost the board.
+            try:
+                job = self.to_job(item, board)
+            except Exception:
+                logger.exception("%s could not map a record from board %s", self.name, board)
+                self._records_skipped += 1
+                continue
             if job is not None:
                 jobs.append(job)
         self._boards_ok.append(board)
