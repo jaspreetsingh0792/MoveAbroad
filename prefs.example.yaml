@@ -85,6 +85,15 @@ title_include:
 # Drop postings older than this when the source reports a date. 0 disables.
 max_age_days: 14
 
+# Seniority read from the title, rather than only excluded as a string.
+# Levels: intern, junior, mid, senior, staff, principal, lead, executive.
+# An empty `allow` accepts every level. Titles that name no level classify as
+# "unknown" and are kept unless keep_unknown is false — plenty of good roles
+# are titled just "Software Engineer".
+seniority:
+  allow: [mid, senior, staff, principal, lead]
+  keep_unknown: true
+
 # Target onsite / hybrid geography (case-insensitive; aliases are expanded).
 locations:
   countries:

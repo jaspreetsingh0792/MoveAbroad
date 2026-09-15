@@ -20,7 +20,7 @@ def header_line(result: RunResult) -> str:
         f"{result.new_count} new · "
         f"{result.already_seen} already seen · "
         f"{result.too_old} too old · "
-        f"{result.rejected} rejected (US-only / title / visa)"
+        f"{result.rejected} rejected (US-only / title / seniority / visa)"
     )
 
 
@@ -74,6 +74,8 @@ def _facts(match: Match, now: datetime | None = None) -> list[str]:
     """The short metadata line shared by every rendering."""
     job = match.job
     parts = [job.location or "Location n/a", job.source]
+    if match.seniority and match.seniority != "unknown":
+        parts.append(match.seniority)
     age = relative_age(job.posted_at, now)
     if age:
         parts.append(age)

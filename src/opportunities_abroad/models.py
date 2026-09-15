@@ -47,6 +47,7 @@ class Match:
     job: Job
     score: int
     reasons: list[str] = field(default_factory=list)
+    seniority: str = "unknown"
     sponsorship: str | None = None
     sponsorship_reason: str | None = None
 
@@ -93,6 +94,7 @@ class RunResult:
     too_old: int = 0
     rejected_location: int = 0
     rejected_title: int = 0
+    rejected_seniority: int = 0
     rejected_visa: int = 0
     sources: list[SourceHealth] = field(default_factory=list)
 
@@ -106,4 +108,9 @@ class RunResult:
 
     @property
     def rejected(self) -> int:
-        return self.rejected_location + self.rejected_title + self.rejected_visa
+        return (
+            self.rejected_location
+            + self.rejected_title
+            + self.rejected_seniority
+            + self.rejected_visa
+        )

@@ -49,6 +49,8 @@ class Prefs:
     visa_require: bool = False
     visa_classifier: bool = False
     visa_classifier_model: str = "claude-sonnet-4-6"
+    seniority_allow: list[str] = field(default_factory=list)
+    seniority_keep_unknown: bool = True
     max_age_days: int = 14
     max_jobs: int = 25
     save_html_to: str | None = None
@@ -109,6 +111,7 @@ def prefs_from_dict(data: dict[str, Any]) -> Prefs:
     adzuna = data.get("adzuna") or {}
     arbeitnow = data.get("arbeitnow") or {}
     visa = data.get("visa") or {}
+    seniority = data.get("seniority") or {}
     http = data.get("http") or {}
 
     arbeitnow_visa = arbeitnow.get("visa_sponsorship", None)
@@ -134,6 +137,8 @@ def prefs_from_dict(data: dict[str, Any]) -> Prefs:
         visa_require=bool(visa.get("require", False)),
         visa_classifier=bool(visa.get("classifier", False)),
         visa_classifier_model=str(visa.get("classifier_model") or "claude-sonnet-4-6"),
+        seniority_allow=[s.lower() for s in _str_list(seniority.get("allow"))],
+        seniority_keep_unknown=bool(seniority.get("keep_unknown", True)),
         max_age_days=int(data.get("max_age_days", 14)),
         max_jobs=int(digest.get("max_jobs", 25)),
         save_html_to=str(save_html_to) if save_html_to else None,

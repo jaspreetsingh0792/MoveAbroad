@@ -76,6 +76,7 @@ def run(
         too_old=stats.too_old,
         rejected_location=stats.rejected_location,
         rejected_title=stats.rejected_title,
+        rejected_seniority=stats.rejected_seniority,
         rejected_visa=stats.rejected_visa,
         sources=source_health,
     )

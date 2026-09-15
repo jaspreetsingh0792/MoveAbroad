@@ -68,19 +68,20 @@ def result() -> RunResult:
         too_old=4,
         rejected_location=3,
         rejected_title=2,
+        rejected_seniority=1,
         rejected_visa=1,
     )
 
 
 def test_header_line_counts(result):
     assert header_line(result) == (
-        "3 new · 6 already seen · 4 too old · 6 rejected (US-only / title / visa)"
+        "3 new · 6 already seen · 4 too old · 7 rejected (US-only / title / seniority / visa)"
     )
 
 
 def test_header_line_with_nothing_new():
     assert header_line(RunResult()) == (
-        "0 new · 0 already seen · 0 too old · 0 rejected (US-only / title / visa)"
+        "0 new · 0 already seen · 0 too old · 0 rejected (US-only / title / seniority / visa)"
     )
 
 

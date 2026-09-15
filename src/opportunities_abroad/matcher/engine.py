@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
+from opportunities_abroad import seniority
 from opportunities_abroad.models import Job, Match
 from opportunities_abroad.prefs import Prefs
 from opportunities_abroad.textutil import strip_html
@@ -127,6 +128,7 @@ class MatchStats:
     too_old: int = 0
     rejected_location: int = 0
     rejected_title: int = 0
+    rejected_seniority: int = 0
     rejected_visa: int = 0
 
 
@@ -166,6 +168,11 @@ def score_job(job: Job, prefs: Prefs, *, stats: MatchStats | None = None) -> Mat
         return None
     if prefs.title_include and not _keyword_hits(prefs.title_include, title_l):
         _count(stats, "rejected_title")
+        return None
+
+    level = seniority.classify(job.title)
+    if not seniority.is_allowed(level, prefs.seniority_allow, prefs.seniority_keep_unknown):
+        _count(stats, "rejected_seniority")
         return None
 
     include_hits = _keyword_hits(prefs.include_keywords, haystack)
@@ -227,7 +234,7 @@ def score_job(job: Job, prefs: Prefs, *, stats: MatchStats | None = None) -> Mat
     elif job.visa_sponsorship is True:
         reasons.append("visa:source-flagged")
 
-    return Match(job=job, score=score, reasons=reasons)
+    return Match(job=job, score=score, reasons=reasons, seniority=level)
 
 
 def location_bonus(location_l: str, weights: dict[str, int]) -> int:
