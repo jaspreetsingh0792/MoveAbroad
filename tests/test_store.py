@@ -99,6 +99,49 @@ def test_fingerprint_dedupes_same_role_on_different_urls(tmp_path):
     store.close()
 
 
+def test_same_title_in_two_countries_stays_two_jobs(tmp_path):
+    """Databricks hiring a Software Engineer in Amsterdam and Berlin is two openings."""
+    store = SqliteJobStore(tmp_path / "seen.db")
+    amsterdam = make_job(
+        company="Databricks",
+        source_id="1",
+        title="Software Engineer",
+        location="Amsterdam, Netherlands",
+        url="https://boards.greenhouse.io/databricks/jobs/1",
+    )
+    berlin = make_job(
+        company="Databricks",
+        source_id="2",
+        title="Software Engineer",
+        location="Berlin, Germany",
+        url="https://boards.greenhouse.io/databricks/jobs/2",
+    )
+    store.mark_seen([amsterdam])
+    assert store.is_seen(berlin) is False
+    assert [j.source_id for j in store.filter_new([amsterdam, berlin])] == ["2"]
+    store.close()
+
+
+def test_location_spelling_differences_still_collapse(tmp_path):
+    """The whole point of the fingerprint: one role, two sources, two spellings."""
+    store = SqliteJobStore(tmp_path / "seen.db")
+    board = make_job(
+        source="greenhouse",
+        source_id="acme:1",
+        location="Amsterdam",
+        url="https://boards.greenhouse.io/acme/jobs/1",
+    )
+    aggregator = make_job(
+        source="arbeitnow",
+        source_id="acme-python-software-engineer",
+        location="Amsterdam, Netherlands",
+        url="https://boards.greenhouse.io/acme/jobs/9999",
+    )
+    store.mark_seen([board])
+    assert store.is_seen(aggregator) is True
+    store.close()
+
+
 def test_fingerprint_is_scoped_to_host(tmp_path):
     store = SqliteJobStore(tmp_path / "seen.db")
     store.mark_seen([make_job(url="https://boards.greenhouse.io/acme/jobs/1")])
@@ -159,10 +202,49 @@ def test_migrates_legacy_database_and_backfills(tmp_path):
 
     store = SqliteJobStore(path)
     assert store.count() == 1
-    row = store._conn.execute("SELECT fingerprint FROM seen_jobs").fetchone()
-    assert row["fingerprint"] == fingerprint("Acme", "Python Software Engineer", "example.com")
+    row = store._conn.execute("SELECT fingerprint, location FROM seen_jobs").fetchone()
 
-    # The migrated row now dedupes across sources like a freshly written one.
+    # A legacy row has no stored location, so its fingerprint is computed with
+    # the "Other" bucket. Key and URL matching still protect it.
+    assert row["location"] is None
+    assert row["fingerprint"] == fingerprint(
+        "Acme", "Python Software Engineer", "example.com", "Other"
+    )
+    assert store.is_seen(make_job(source="remotive", source_id="1")) is True
+    assert store.is_seen(make_job(source="lever", source_id="9")) is True
+    store.close()
+
+
+def test_rewritten_rows_gain_full_fingerprint_protection(tmp_path):
+    """A legacy row re-seen with a location dedupes across sources again."""
+    path = tmp_path / "legacy.db"
+    legacy = sqlite3.connect(path)
+    legacy.executescript(LEGACY_SCHEMA)
+    legacy.execute(
+        """
+        INSERT INTO seen_jobs (
+            job_key, source, source_id, url, url_norm, title, company,
+            first_seen, last_seen, notified
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            "remotive:1",
+            "remotive",
+            "1",
+            "https://example.com/jobs/1",
+            "https://example.com/jobs/1",
+            "Python Software Engineer",
+            "Acme",
+            "2026-01-01T00:00:00+00:00",
+            "2026-01-01T00:00:00+00:00",
+            1,
+        ),
+    )
+    legacy.commit()
+    legacy.close()
+
+    store = SqliteJobStore(path)
+    store.mark_seen([make_job(source="remotive", source_id="1")])
     reposted = make_job(source="lever", source_id="9", url="https://example.com/jobs/other")
     assert store.is_seen(reposted) is True
     store.close()

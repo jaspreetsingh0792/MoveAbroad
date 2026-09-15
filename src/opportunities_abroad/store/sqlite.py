@@ -4,8 +4,25 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
+from opportunities_abroad.matcher.engine import country_for_location
 from opportunities_abroad.models import Job
 from opportunities_abroad.textutil import fingerprint, normalize_url
+
+
+def job_fingerprint(job: Job) -> str:
+    """Cross-source identity for a job.
+
+    The location is reduced to a country bucket first: sources spell places
+    differently ("Amsterdam" vs "Amsterdam, Netherlands"), so matching the raw
+    string would defeat the dedupe, while ignoring location entirely would
+    merge two genuinely separate openings in different countries.
+    """
+    return fingerprint(
+        job.company,
+        job.title,
+        job.url,
+        country_for_location(job.location, remote=job.remote is True),
+    )
 
 
 class SqliteJobStore:
@@ -38,6 +55,7 @@ class SqliteJobStore:
                 url_norm TEXT,
                 title TEXT,
                 company TEXT,
+                location TEXT,
                 fingerprint TEXT,
                 first_seen TEXT NOT NULL,
                 last_seen TEXT NOT NULL,
@@ -60,17 +78,36 @@ class SqliteJobStore:
     def _migrate(self) -> None:
         """Bring a database written by an older version up to the current schema."""
         columns = {row["name"] for row in self._conn.execute("PRAGMA table_info(seen_jobs)")}
+        stale = False
         if "fingerprint" not in columns:
             self._conn.execute("ALTER TABLE seen_jobs ADD COLUMN fingerprint TEXT")
+            stale = True
+        if "location" not in columns:
+            # Fingerprints predating this column were computed without a
+            # locale, so they have to be recomputed on the same terms.
+            self._conn.execute("ALTER TABLE seen_jobs ADD COLUMN location TEXT")
+            stale = True
+        if stale:
             self._backfill_fingerprints()
         self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_seen_fingerprint ON seen_jobs(fingerprint)"
         )
 
     def _backfill_fingerprints(self) -> None:
-        rows = self._conn.execute("SELECT job_key, company, title, url FROM seen_jobs").fetchall()
+        rows = self._conn.execute(
+            "SELECT job_key, company, title, url, location FROM seen_jobs"
+        ).fetchall()
         updates = [
-            (fingerprint(row["company"], row["title"], row["url"]), row["job_key"]) for row in rows
+            (
+                fingerprint(
+                    row["company"],
+                    row["title"],
+                    row["url"],
+                    country_for_location(row["location"] or ""),
+                ),
+                row["job_key"],
+            )
+            for row in rows
         ]
         self._conn.executemany(
             "UPDATE seen_jobs SET fingerprint = ? WHERE job_key = ?",
@@ -79,7 +116,7 @@ class SqliteJobStore:
 
     def is_seen(self, job: Job) -> bool:
         url_norm = normalize_url(job.url)
-        identity = fingerprint(job.company, job.title, job.url)
+        identity = job_fingerprint(job)
         row = self._conn.execute(
             """
             SELECT 1 FROM seen_jobs
@@ -100,7 +137,7 @@ class SqliteJobStore:
         seen_prints: set[str] = set()
         for job in jobs:
             url_norm = normalize_url(job.url)
-            identity = fingerprint(job.company, job.title, job.url)
+            identity = job_fingerprint(job)
             if job.key in seen_keys:
                 continue
             if url_norm and url_norm in seen_urls:
@@ -130,7 +167,8 @@ class SqliteJobStore:
                     normalize_url(job.url),
                     job.title,
                     job.company,
-                    fingerprint(job.company, job.title, job.url),
+                    job.location,
+                    job_fingerprint(job),
                     now,
                     now,
                     1 if notified else 0,
@@ -139,14 +177,15 @@ class SqliteJobStore:
         self._conn.executemany(
             """
             INSERT INTO seen_jobs (
-                job_key, source, source_id, url, url_norm, title, company, fingerprint,
-                first_seen, last_seen, notified
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                job_key, source, source_id, url, url_norm, title, company, location,
+                fingerprint, first_seen, last_seen, notified
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(job_key) DO UPDATE SET
                 last_seen = excluded.last_seen,
                 notified = MAX(seen_jobs.notified, excluded.notified),
                 url = excluded.url,
                 url_norm = excluded.url_norm,
+                location = excluded.location,
                 fingerprint = excluded.fingerprint
             """,
             rows,
