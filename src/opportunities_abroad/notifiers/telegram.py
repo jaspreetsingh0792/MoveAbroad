@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from opportunities_abroad.models import Match
+from opportunities_abroad.models import RunResult
 from opportunities_abroad.notifiers.base import Notifier
 
 logger = logging.getLogger(__name__)
@@ -20,9 +20,9 @@ class TelegramNotifier(Notifier):
 
     name = "telegram"
 
-    def send(self, matches: list[Match]) -> None:
+    def send(self, result: RunResult) -> None:
         logger.warning(
             "TelegramNotifier is a stub (no-op). %s match(es) not sent. "
             "Use email until the Telegram Bot API is wired up.",
-            len(matches),
+            result.new_count,
         )

@@ -5,7 +5,10 @@ import logging
 from opportunities_abroad.prefs import Prefs
 from opportunities_abroad.sources.adzuna import AdzunaSource
 from opportunities_abroad.sources.arbeitnow import ArbeitnowSource
+from opportunities_abroad.sources.ashby import AshbySource
 from opportunities_abroad.sources.base import JobSource
+from opportunities_abroad.sources.greenhouse import GreenhouseSource
+from opportunities_abroad.sources.lever import LeverSource
 from opportunities_abroad.sources.remotive import RemotiveSource
 
 logger = logging.getLogger(__name__)
@@ -14,6 +17,9 @@ _BUILTIN: dict[str, type[JobSource]] = {
     "remotive": RemotiveSource,
     "arbeitnow": ArbeitnowSource,
     "adzuna": AdzunaSource,
+    "greenhouse": GreenhouseSource,
+    "lever": LeverSource,
+    "ashby": AshbySource,
 }
 
 

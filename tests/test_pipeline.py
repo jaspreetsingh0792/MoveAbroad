@@ -1,0 +1,177 @@
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+
+import pytest
+
+from opportunities_abroad.models import Match, RunResult
+from opportunities_abroad.pipeline import fetch_all, run
+from opportunities_abroad.prefs import prefs_from_dict
+from opportunities_abroad.sources.base import JobSource
+from opportunities_abroad.store.sqlite import SqliteJobStore
+
+from tests.conftest import make_job
+
+
+class StubSource(JobSource):
+    def __init__(self, name, jobs=None, boom=False):
+        self.name = name
+        self._jobs = jobs or []
+        self._boom = boom
+
+    def fetch(self, prefs):
+        if self._boom:
+            raise RuntimeError("source exploded")
+        return self._jobs
+
+
+class RecordingNotifier:
+    name = "recording"
+
+    def __init__(self):
+        self.sent: list[RunResult] = []
+
+    def send(self, result):
+        self.sent.append(result)
+
+
+class StubClassifier:
+    def __init__(self):
+        self.seen: list[Match] = []
+
+    def annotate(self, matches):
+        self.seen.extend(matches)
+        for match in matches:
+            match.sponsorship = "yes"
+            match.sponsorship_reason = "stubbed"
+
+
+@pytest.fixture
+def prefs():
+    return prefs_from_dict(
+        {
+            "include_keywords": ["python"],
+            "title_exclude": ["junior"],
+            "locations": {"countries": ["Netherlands"]},
+            "max_age_days": 14,
+        }
+    )
+
+
+@pytest.fixture
+def store(tmp_path):
+    with SqliteJobStore(tmp_path / "seen.db") as opened:
+        yield opened
+
+
+def test_fetch_all_survives_a_crashing_source(prefs):
+    jobs = fetch_all(
+        [StubSource("broken", boom=True), StubSource("ok", [make_job()])],
+        prefs,
+    )
+    assert [j.source_id for j in jobs] == ["1"]
+
+
+def test_run_reports_every_rejection_reason(prefs, store):
+    jobs = [
+        make_job(source_id="1", title="Python Engineer"),
+        make_job(source_id="2", title="Junior Python Engineer"),
+        make_job(
+            source_id="3",
+            title="Python Engineer",
+            company="Stale Co",
+            posted_at=datetime.now(timezone.utc) - timedelta(days=60),
+        ),
+        make_job(
+            source_id="4",
+            title="Python Engineer",
+            company="Texan Co",
+            location="Austin, Texas",
+            description="Onsite python role.",
+            remote=False,
+        ),
+    ]
+    result = run(prefs, [StubSource("stub", jobs)], store)
+
+    assert isinstance(result, RunResult)
+    assert result.fetched == 4
+    assert result.matched == 1
+    assert result.new_count == 1
+    assert result.too_old == 1
+    assert result.rejected_title == 1
+    assert result.rejected_location == 1
+    assert result.rejected == 2
+
+
+def test_already_seen_is_counted_not_resent(prefs, store):
+    jobs = [
+        make_job(source_id="1", title="Python Engineer", company="A", url="https://a.example/1"),
+        make_job(source_id="2", title="Python Engineer", company="B", url="https://b.example/2"),
+    ]
+    first = run(prefs, [StubSource("stub", jobs)], store, mark_seen=True)
+    assert first.new_count == 2
+    assert first.already_seen == 0
+
+    second = run(prefs, [StubSource("stub", jobs)], store, mark_seen=True)
+    assert second.matches == []
+    assert second.new_count == 0
+    assert second.already_seen == 2
+
+
+def test_dry_run_does_not_touch_the_store(prefs, store):
+    run(prefs, [StubSource("stub", [make_job(title="Python Engineer")])], store)
+    assert store.count() == 0
+
+
+def test_send_notifies_with_the_result_and_marks_seen(prefs, store):
+    notifier = RecordingNotifier()
+    result = run(
+        prefs,
+        [StubSource("stub", [make_job(title="Python Engineer")])],
+        store,
+        notifier=notifier,
+        send=True,
+    )
+    assert notifier.sent == [result]
+    assert store.count() == 1
+
+
+def test_send_without_matches_skips_the_notifier(prefs, store):
+    notifier = RecordingNotifier()
+    run(prefs, [StubSource("stub", [])], store, notifier=notifier, send=True)
+    assert notifier.sent == []
+
+
+def test_send_without_a_notifier_is_an_error(prefs, store):
+    with pytest.raises(RuntimeError, match="requires a notifier"):
+        run(prefs, [StubSource("stub", [make_job(title="Python Engineer")])], store, send=True)
+
+
+def test_classifier_annotates_only_the_digest(prefs, store):
+    prefs.max_jobs = 1
+    jobs = [
+        make_job(source_id="1", title="Senior Python Engineer", company="A", url="https://a.tld/1"),
+        make_job(source_id="2", title="Python Engineer", company="B", url="https://b.tld/2"),
+    ]
+    classifier = StubClassifier()
+    result = run(prefs, [StubSource("stub", jobs)], store, classifier=classifier)
+
+    assert len(result.matches) == 1
+    assert len(classifier.seen) == 1
+    assert result.matches[0].sponsorship == "yes"
+    assert result.matches[0].sponsorship_reason == "stubbed"
+
+
+def test_limit_caps_the_digest(prefs, store):
+    jobs = [
+        make_job(
+            source_id=str(i),
+            title="Python Engineer",
+            company=f"Co {i}",
+            url=f"https://co{i}.example/jobs/{i}",
+        )
+        for i in range(5)
+    ]
+    result = run(prefs, [StubSource("stub", jobs)], store, limit=2)
+    assert result.new_count == 2
+    assert result.matched == 5

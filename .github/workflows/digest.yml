@@ -1,0 +1,73 @@
+name: Digest
+
+on:
+  schedule:
+    # 06:00 UTC, Monday to Friday.
+    - cron: "0 6 * * 1-5"
+  workflow_dispatch:
+
+# Needed to commit the seen-job database back to the branch.
+permissions:
+  contents: write
+
+# Two runs writing the database at once would lose one side's history.
+concurrency:
+  group: digest
+  cancel-in-progress: false
+
+jobs:
+  digest:
+    name: Send digest
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Write prefs.yaml from the PREFS_YAML secret
+        env:
+          PREFS_YAML: ${{ secrets.PREFS_YAML }}
+        run: |
+          if [ -z "$PREFS_YAML" ]; then
+            echo "::error::PREFS_YAML secret is not set. See the README (GitHub Actions)."
+            exit 1
+          fi
+          printf '%s\n' "$PREFS_YAML" > prefs.yaml
+
+      - name: Run the digest
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_STARTTLS: ${{ secrets.SMTP_STARTTLS }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}
+          ADZUNA_API_KEY: ${{ secrets.ADZUNA_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python -m opportunities_abroad --send --prefs prefs.yaml
+
+      - name: Persist the seen-job database
+        run: |
+          # The database is gitignored for local use, so force-add it here and
+          # let the staged diff decide whether anything actually changed.
+          git add --force data/seen_jobs.db
+          if git diff --cached --quiet; then
+            echo "Seen-job database unchanged; nothing to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: update seen-job database [skip ci]"
+          git push

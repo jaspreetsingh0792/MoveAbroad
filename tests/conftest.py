@@ -28,16 +28,16 @@ def sample_prefs():
 
 
 def make_job(**overrides) -> Job:
-    data = dict(
-        source="test",
-        source_id="1",
-        title="Python Software Engineer",
-        company="Acme",
-        url="https://example.com/jobs/1",
-        location="Amsterdam, Netherlands",
-        description="Backend role with visa sponsorship.",
-        tags=["python"],
-        remote=False,
-    )
+    data = {
+        "source": "test",
+        "source_id": "1",
+        "title": "Python Software Engineer",
+        "company": "Acme",
+        "url": "https://example.com/jobs/1",
+        "location": "Amsterdam, Netherlands",
+        "description": "Backend role with visa sponsorship.",
+        "tags": ["python"],
+        "remote": False,
+    }
     data.update(overrides)
     return Job(**data)

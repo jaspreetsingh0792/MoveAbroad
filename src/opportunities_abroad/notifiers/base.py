@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from opportunities_abroad.models import Match
+from opportunities_abroad.models import RunResult
 
 
 class Notifier(ABC):
@@ -11,5 +11,5 @@ class Notifier(ABC):
     name: str
 
     @abstractmethod
-    def send(self, matches: list[Match]) -> None:
+    def send(self, result: RunResult) -> None:
         """Deliver the digest. Implementations should be a no-op or raise if stubbed."""

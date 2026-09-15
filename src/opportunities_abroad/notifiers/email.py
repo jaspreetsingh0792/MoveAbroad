@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import html
 import os
 import smtplib
 import ssl
@@ -8,7 +7,8 @@ from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-from opportunities_abroad.models import Match
+from opportunities_abroad.digest import render_html, render_text
+from opportunities_abroad.models import RunResult
 from opportunities_abroad.notifiers.base import Notifier
 
 
@@ -59,15 +59,16 @@ class EmailNotifier(Notifier):
                 "Dry-run mode does not require email settings."
             )
 
-    def send(self, matches: list[Match]) -> None:
+    def send(self, result: RunResult) -> None:
         self.require_configured()
+        count = result.new_count
         subject = (
-            f"[opportunities-abroad] {len(matches)} matching role"
-            f"{'s' if len(matches) != 1 else ''} "
+            f"[opportunities-abroad] {count} matching role"
+            f"{'s' if count != 1 else ''} "
             f"({datetime.now(timezone.utc).date().isoformat()})"
         )
-        text_body = render_text(matches)
-        html_body = render_html(matches)
+        text_body = render_text(result)
+        html_body = render_html(result)
 
         message = MIMEMultipart("alternative")
         message["Subject"] = subject
@@ -99,58 +100,3 @@ class EmailNotifier(Notifier):
 
 def _split_addrs(value: str) -> list[str]:
     return [part.strip() for part in value.replace(";", ",").split(",") if part.strip()]
-
-
-def render_text(matches: list[Match]) -> str:
-    if not matches:
-        return "No new matching jobs this run.\n"
-    lines = [
-        "Opportunities Abroad — new matching jobs",
-        f"{len(matches)} listing(s). Apply on the original posting (source is credited).",
-        "",
-    ]
-    for match in matches:
-        job = match.job
-        lines.extend(
-            [
-                f"- {job.title} @ {job.company}",
-                f"  {job.location or 'Location n/a'} | {job.source} | score {match.score}",
-                f"  {job.url}",
-                f"  why: {', '.join(match.reasons) or 'matched prefs'}",
-                "",
-            ]
-        )
-    lines.append("This digest is for personal use. It is not a job board.")
-    return "\n".join(lines)
-
-
-def render_html(matches: list[Match]) -> str:
-    rows = []
-    for match in matches:
-        job = match.job
-        title = html.escape(job.title)
-        company = html.escape(job.company or "Unknown company")
-        location = html.escape(job.location or "n/a")
-        url = html.escape(job.url, quote=True)
-        source = html.escape(job.source)
-        reasons = html.escape(", ".join(match.reasons) or "matched prefs")
-        rows.append(
-            "<tr>"
-            f"<td style='padding:10px;border-bottom:1px solid #eee;'>"
-            f"<a href='{url}'>{title}</a><br>"
-            f"<span style='color:#444;'>{company} · {location}</span><br>"
-            f"<span style='color:#666;font-size:12px;'>{source} · score {match.score} · {reasons}</span>"
-            "</td></tr>"
-        )
-    body = (
-        "<p>No new matching jobs this run.</p>"
-        if not matches
-        else "<table width='100%' cellpadding='0' cellspacing='0'>" + "".join(rows) + "</table>"
-    )
-    return f"""<!DOCTYPE html>
-<html><body style="font-family:sans-serif;max-width:720px;">
-  <h2>Opportunities Abroad</h2>
-  <p>{len(matches)} matching listing(s). Open the original posting — sources are credited; this is a personal digest, not a job board.</p>
-  {body}
-</body></html>
-"""
