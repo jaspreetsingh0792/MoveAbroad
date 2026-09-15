@@ -29,6 +29,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "pytest>=8.0",
+  "ruff>=0.6",
 ]
 
 [project.urls]
@@ -45,3 +46,26 @@ where = ["src"]
 testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+  "E",    # pycodestyle errors
+  "W",    # pycodestyle warnings
+  "F",    # pyflakes
+  "I",    # import sorting
+  "B",    # bugbear
+  "UP",   # pyupgrade
+  "C4",   # comprehensions
+]
+# The codebase spells UTC as `timezone.utc` throughout; the `datetime.UTC`
+# alias is equivalent and not worth a churn commit.
+ignore = ["UP017"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["opportunities_abroad"]
+known-local-folder = ["tests"]

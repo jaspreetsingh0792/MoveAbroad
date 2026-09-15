@@ -7,7 +7,6 @@ from typing import Any
 
 import yaml
 
-
 # Ranking weights applied when prefs do not override them. These reproduce the
 # original hardcoded scoring, so an unconfigured prefs file ranks as it always did.
 DEFAULT_SCORE_WEIGHTS: dict[str, int] = {

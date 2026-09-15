@@ -161,7 +161,7 @@ def score_job(job: Job, prefs: Prefs, *, stats: MatchStats | None = None) -> Mat
         if "hybrid" not in reasons:
             reasons.append("onsite")
 
-    # Hybrid/onsite already handled. A remote job in a target city can also count as onsite-friendly.
+    # A remote job sitting in a target city still counts as onsite-friendly.
     if not mode_ok and prefs.accept_onsite and _geo_matches(job, prefs, location_l, location_l):
         mode_ok = True
         reasons.append("onsite")

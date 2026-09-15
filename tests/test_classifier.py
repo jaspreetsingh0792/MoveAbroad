@@ -139,10 +139,9 @@ def test_uses_the_shared_polite_client_when_none_is_injected(classifier_prefs, s
     def fake_make_client(timeout: float) -> httpx.Client:
         built.append(timeout)
         body = json.dumps({"sponsorship": "unclear", "reason": "Silent."})
+        payload = {"content": [{"type": "text", "text": body}]}
         return httpx.Client(
-            transport=httpx.MockTransport(
-                lambda request: httpx.Response(200, json={"content": [{"type": "text", "text": body}]})
-            )
+            transport=httpx.MockTransport(lambda request: httpx.Response(200, json=payload))
         )
 
     monkeypatch.setattr("opportunities_abroad.classifier.make_client", fake_make_client)
