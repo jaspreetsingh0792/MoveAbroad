@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 import httpx
 
 from opportunities_abroad.http import make_client
-from opportunities_abroad.models import Job
+from opportunities_abroad.models import Job, SourceHealth
 from opportunities_abroad.prefs import Prefs
 from opportunities_abroad.sources.base import JobSource
 
@@ -27,6 +27,16 @@ class AtsBoardSource(JobSource):
 
     def __init__(self, client: httpx.Client | None = None) -> None:
         self._client = client
+        self._boards_ok: list[str] = []
+        self._boards_failed: list[str] = []
+
+    def health(self, fetched: int) -> SourceHealth:
+        return SourceHealth(
+            name=self.name,
+            fetched=fetched,
+            boards_ok=list(self._boards_ok),
+            boards_failed=list(self._boards_failed),
+        )
 
     @abstractmethod
     def board_url(self, board: str) -> str:
@@ -55,6 +65,8 @@ class AtsBoardSource(JobSource):
         client = self._client or make_client(prefs.http_timeout_seconds)
         owns_client = self._client is None
         jobs: list[Job] = []
+        self._boards_ok = []
+        self._boards_failed = []
         try:
             for index, board in enumerate(boards):
                 if index:
@@ -73,12 +85,14 @@ class AtsBoardSource(JobSource):
             payload = response.json()
         except Exception:
             logger.exception("%s fetch failed for board %s", self.name, board)
+            self._boards_failed.append(board)
             return []
         jobs = []
         for item in self.extract_items(payload):
             job = self.to_job(item, board)
             if job is not None:
                 jobs.append(job)
+        self._boards_ok.append(board)
         logger.debug("%s/%s: %s jobs", self.name, board, len(jobs))
         return jobs
 

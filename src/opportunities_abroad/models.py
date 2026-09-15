@@ -52,6 +52,37 @@ class Match:
 
 
 @dataclass(slots=True)
+class SourceHealth:
+    """What one source did on this run.
+
+    A source that fails is indistinguishable from one that legitimately had
+    nothing, unless the run says so out loud.
+    """
+
+    name: str
+    fetched: int = 0
+    failed: bool = False
+    error: str = ""
+    boards_ok: list[str] = field(default_factory=list)
+    boards_failed: list[str] = field(default_factory=list)
+
+    @property
+    def healthy(self) -> bool:
+        return not self.failed and not self.boards_failed
+
+    def summary(self) -> str:
+        if self.failed:
+            return f"{self.name}: FAILED ({self.error or 'unknown error'})"
+        total_boards = len(self.boards_ok) + len(self.boards_failed)
+        if total_boards:
+            detail = f"{len(self.boards_ok)}/{total_boards} boards OK"
+            if self.boards_failed:
+                detail += f" — failed: {', '.join(sorted(self.boards_failed))}"
+            return f"{self.name}: {self.fetched} fetched, {detail}"
+        return f"{self.name}: {self.fetched} fetched"
+
+
+@dataclass(slots=True)
 class RunResult:
     """Outcome of one pipeline run: the digest plus why everything else was dropped."""
 
@@ -63,6 +94,11 @@ class RunResult:
     rejected_location: int = 0
     rejected_title: int = 0
     rejected_visa: int = 0
+    sources: list[SourceHealth] = field(default_factory=list)
+
+    @property
+    def unhealthy_sources(self) -> list[SourceHealth]:
+        return [s for s in self.sources if not s.healthy]
 
     @property
     def new_count(self) -> int:

@@ -187,6 +187,50 @@ def test_one_failing_board_does_not_sink_the_rest():
     assert [j.source_id for j in jobs] == ["acme:4567"]
 
 
+def test_board_health_names_the_failing_slug():
+    prefs = prefs_from_dict({"ats_boards": {"greenhouse": ["broken", "acme"]}})
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "broken" in str(request.url):
+            return httpx.Response(500, json={"error": "boom"})
+        return httpx.Response(200, json=GREENHOUSE_PAYLOAD)
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        source = GreenhouseSource(client)
+        jobs = source.fetch(prefs)
+        health = source.health(len(jobs))
+
+    assert health.boards_ok == ["acme"]
+    assert health.boards_failed == ["broken"]
+    assert health.healthy is False
+    assert "1/2 boards OK" in health.summary()
+    assert "broken" in health.summary()
+
+
+def test_board_health_is_clean_when_everything_works(ats_prefs):
+    with client_returning(GREENHOUSE_PAYLOAD, "boards-api.greenhouse.io") as client:
+        source = GreenhouseSource(client)
+        health = source.health(len(source.fetch(ats_prefs)))
+
+    assert health.healthy is True
+    assert health.boards_failed == []
+    assert "1/1 boards OK" in health.summary()
+
+
+def test_board_health_resets_between_runs():
+    prefs = prefs_from_dict({"ats_boards": {"greenhouse": ["flaky"]}})
+    responses = [httpx.Response(500, json={}), httpx.Response(200, json=GREENHOUSE_PAYLOAD)]
+
+    with httpx.Client(transport=httpx.MockTransport(lambda r: responses.pop(0))) as client:
+        source = GreenhouseSource(client)
+        source.fetch(prefs)
+        assert source.health(0).boards_failed == ["flaky"]
+
+        source.fetch(prefs)
+        assert source.health(1).boards_failed == []
+        assert source.health(1).boards_ok == ["flaky"]
+
+
 def test_unexpected_payload_shape_is_ignored(ats_prefs):
     with client_returning({"unexpected": True}, "api.ashbyhq.com") as client:
         assert AshbySource(client).fetch(ats_prefs) == []
