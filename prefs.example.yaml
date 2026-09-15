@@ -1,0 +1,135 @@
+# Sample preferences for an Indian software engineer targeting the
+# Netherlands / EU, plus remote-friendly international roles.
+#
+# Copy to prefs.yaml and edit. prefs.yaml is gitignored.
+
+include_keywords:
+  - python
+  - software engineer
+  - software developer
+  - backend
+  - back-end
+  - fullstack
+  - full-stack
+  - full stack
+  - django
+  - fastapi
+  - flask
+  - devops
+  - platform engineer
+  - site reliability
+  - sre
+  - data engineer
+  - machine learning
+  - typescript
+  - node.js
+  - golang
+  - rust
+
+exclude_keywords:
+  - intern
+  - internship
+  - unpaid
+  - volunteer
+  - "student only"
+  - bootcamp
+
+# Target onsite / hybrid geography (case-insensitive; aliases are expanded).
+locations:
+  countries:
+    - Netherlands
+    - Germany
+    - Belgium
+    - Austria
+    - Ireland
+    - France
+    - Spain
+    - Portugal
+    - Sweden
+    - Denmark
+    - Finland
+    - Norway
+    - Poland
+    - Czech Republic
+    - Switzerland
+    - Luxembourg
+    - Estonia
+    - EU
+    - Europe
+  cities:
+    - Amsterdam
+    - Rotterdam
+    - Utrecht
+    - Eindhoven
+    - The Hague
+    - Berlin
+    - Munich
+    - Hamburg
+    - Dublin
+    - Lisbon
+    - Barcelona
+
+work_mode:
+  remote: true          # include remote / remote-friendly roles
+  hybrid: true
+  onsite: true          # include onsite roles in the countries/cities above
+  remote_only: false    # set true to drop onsite-only postings
+
+# If a remote job names a required candidate location, accept these
+# and reject clearly US/UK-only (or similar) restrictions unless those
+# countries are in `locations.countries`.
+remote:
+  accept_locations:
+    - Worldwide
+    - Anywhere
+    - Remote
+    - Global
+    - International
+    - Europe
+    - EU
+    - EEA
+    - EMEA
+    - India
+    - APAC
+  reject_locations:
+    - USA only
+    - US only
+    - United States only
+    - North America only
+    - Canada only
+    - UK only
+    - United Kingdom only
+
+# Soft boost in ranking (not a hard filter). Helpful when relocating from India.
+visa_keywords:
+  - visa
+  - sponsorship
+  - relocation
+  - relocate
+  - work permit
+  - blue card
+  - highly skilled migrant
+  - kennismigrant
+  - immigration
+
+digest:
+  max_jobs: 25
+
+sources:
+  remotive: true
+  arbeitnow: true
+  adzuna: true   # live calls only if ADZUNA_APP_ID and ADZUNA_API_KEY are set
+
+# Used only when the Adzuna source is enabled and keys are present.
+adzuna:
+  countries: [nl, de, at, be, fr, ie]
+  what: software engineer python
+  results_per_page: 20
+  max_pages: 1
+
+arbeitnow:
+  max_pages: 2          # API is rate-limited; keep this small
+  visa_sponsorship: null  # true / false / null (no filter)
+
+http:
+  timeout_seconds: 30
