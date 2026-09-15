@@ -5,7 +5,13 @@ import json
 import httpx
 import pytest
 
-from opportunities_abroad.classifier import UNCLEAR, VisaClassifier, build_classifier
+from opportunities_abroad.classifier import (
+    MAX_DESCRIPTION_CHARS,
+    UNCLEAR,
+    VisaClassifier,
+    build_classifier,
+    visa_excerpt,
+)
 from opportunities_abroad.models import Match
 from opportunities_abroad.prefs import prefs_from_dict
 from opportunities_abroad.store.sqlite import SqliteJobStore
@@ -66,8 +72,47 @@ def test_request_shape_and_truncation(classifier_prefs, store):
     sent = json.loads(request.content)
     assert sent["model"] == "claude-sonnet-4-6"
     prompt = sent["messages"][0]["content"]
-    assert prompt.count("x") == 2500
+    assert prompt.count("x") <= MAX_DESCRIPTION_CHARS
     assert "Python Software Engineer" in prompt
+
+
+def test_sponsorship_at_the_end_of_a_long_posting_reaches_the_model(classifier_prefs, store):
+    tail = "We support visa sponsorship and relocation for the right candidate."
+    description = "Intro paragraph about the team. " + ("filler sentence. " * 900) + tail
+    assert len(description) > MAX_DESCRIPTION_CHARS
+
+    body = json.dumps({"sponsorship": "yes", "reason": "Sponsorship stated."})
+    with reply(body) as client:
+        match = a_match(description=description)
+        VisaClassifier(classifier_prefs, store, client=client, key="k").annotate([match])
+        prompt = json.loads(client.calls[0].content)["messages"][0]["content"]
+
+    assert tail in prompt
+    assert "Intro paragraph about the team." in prompt
+
+
+def test_short_descriptions_are_passed_through_whole():
+    text = "A short posting that mentions nothing about permits."
+    assert visa_excerpt(text) == text
+
+
+def test_excerpt_respects_the_budget():
+    description = "start. " + ("filler. " * 2000) + "we offer visa sponsorship."
+    excerpt = visa_excerpt(description, budget=1200)
+    assert len(excerpt.replace(" […] ", "")) <= 1200
+    assert "visa sponsorship" in excerpt
+
+
+def test_excerpt_keeps_the_opening_when_nothing_matches():
+    description = "opening line. " + ("nothing relevant here. " * 500)
+    excerpt = visa_excerpt(description, budget=500)
+    assert excerpt.startswith("opening line.")
+    assert len(excerpt) <= 500
+
+
+def test_excerpt_handles_empty_description():
+    assert visa_excerpt(None) == ""
+    assert visa_excerpt("") == ""
 
 
 def test_verdicts_are_cached_between_runs(classifier_prefs, store):
