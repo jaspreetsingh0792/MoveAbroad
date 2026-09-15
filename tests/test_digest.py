@@ -79,6 +79,12 @@ def test_header_line_counts(result):
     )
 
 
+def test_header_line_mentions_a_backlog_only_when_there_is_one(result):
+    assert "held for next run" not in header_line(result)
+    result.backlog = 20
+    assert "20 held for next run" in header_line(result)
+
+
 def test_header_line_with_nothing_new():
     assert header_line(RunResult()) == (
         "0 new · 0 already seen · 0 too old · 0 rejected (US-only / title / seniority / visa)"

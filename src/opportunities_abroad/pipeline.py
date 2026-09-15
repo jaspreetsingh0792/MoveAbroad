@@ -63,8 +63,12 @@ def run(
     cap = prefs.max_jobs
     if limit is not None:
         cap = limit if cap <= 0 else min(cap, limit)
-    if cap > 0:
+    backlog = 0
+    if cap > 0 and len(fresh_matches) > cap:
+        # Everything past the cap stays unmarked so it can surface next run.
+        backlog = len(fresh_matches) - cap
         fresh_matches = fresh_matches[:cap]
+        logger.info("%s new match(es) held back by the cap of %s", backlog, cap)
     logger.info("%s new matches after de-dupe", len(fresh_matches))
 
     if classifier is not None:
@@ -75,6 +79,7 @@ def run(
         fetched=len(jobs),
         matched=len(matches),
         already_seen=already_seen,
+        backlog=backlog,
         too_old=stats.too_old,
         rejected_location=stats.rejected_location,
         rejected_title=stats.rejected_title,

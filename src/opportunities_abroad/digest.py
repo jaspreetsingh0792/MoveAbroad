@@ -16,12 +16,15 @@ INTRO = "Open the original posting — sources are credited."
 
 def header_line(result: RunResult) -> str:
     """One-line account of the run, including what never made the digest."""
-    return (
-        f"{result.new_count} new · "
-        f"{result.already_seen} already seen · "
-        f"{result.too_old} too old · "
-        f"{result.rejected} rejected (US-only / title / seniority / visa)"
-    )
+    parts = [
+        f"{result.new_count} new",
+        f"{result.already_seen} already seen",
+        f"{result.too_old} too old",
+        f"{result.rejected} rejected (US-only / title / seniority / visa)",
+    ]
+    if result.backlog:
+        parts.insert(1, f"{result.backlog} held for next run")
+    return " · ".join(parts)
 
 
 def source_lines(result: RunResult) -> list[str]:

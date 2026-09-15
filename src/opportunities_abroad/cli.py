@@ -18,7 +18,8 @@ from opportunities_abroad.sources.registry import build_sources
 from opportunities_abroad.store.sqlite import SqliteJobStore
 from opportunities_abroad.visa import SponsorRegister
 
-DEFAULT_PREFS_CANDIDATES = ("prefs.yaml", "prefs.json", "prefs.example.yaml")
+DEFAULT_PREFS_CANDIDATES = ("prefs.yaml", "prefs.json")
+EXAMPLE_PREFS = "prefs.example.yaml"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -30,6 +31,14 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     prefs_path = _resolve_prefs(args.prefs)
+    if prefs_path is None:
+        print(
+            f"No preferences found. Copy the sample and edit it:\n"
+            f"  cp {EXAMPLE_PREFS} {DEFAULT_PREFS_CANDIDATES[0]}\n"
+            f"Then run again, or pass --prefs PATH.",
+            file=sys.stderr,
+        )
+        return 2
     db_path = args.db or os.environ.get("DATABASE_PATH") or "data/seen_jobs.db"
 
     try:
@@ -85,7 +94,7 @@ def main(argv: list[str] | None = None) -> int:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        prog="opportunities-abroad",
+        prog="moveabroad",
         description=(
             "Fetch public job APIs, match against your prefs, and print or email a digest. "
             "Default is dry-run (no email, no DB writes)."
@@ -93,12 +102,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--prefs", help="Path to YAML/JSON preferences (default: prefs.yaml)")
     parser.add_argument("--db", help="SQLite path for seen jobs (default: data/seen_jobs.db)")
-    parser.add_argument(
+    # Sending and dry-running are opposites; accepting both silently sent.
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         "--dry-run",
         action="store_true",
         help="Print matches only (default). Does not send email.",
     )
-    parser.add_argument(
+    mode.add_argument(
         "--send",
         action="store_true",
         help="Email the digest of new matches and mark them seen. For cron.",
@@ -132,7 +143,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _resolve_prefs(explicit: str | None) -> Path:
+def _resolve_prefs(explicit: str | None) -> Path | None:
+    """Locate a preferences file, or None when the user has not made one.
+
+    Falling through to the bundled example used to be silent, which meant a
+    run with no configuration quietly searched against somebody else's
+    profile — the sample targets the Netherlands and Germany with an Indian
+    software engineer's keywords — and looked like a real result.
+    """
     if explicit:
         return Path(explicit)
     env_path = os.environ.get("PREFS_PATH")
@@ -142,9 +160,16 @@ def _resolve_prefs(explicit: str | None) -> Path:
         candidate = Path(name)
         if candidate.exists():
             return candidate
-    # Fall back to the example shipped with the repo, even if cwd differs.
-    here = Path(__file__).resolve().parents[2] / "prefs.example.yaml"
-    return here
+    example = Path(EXAMPLE_PREFS)
+    if example.exists():
+        print(
+            f"No {DEFAULT_PREFS_CANDIDATES[0]} found — using the sample preferences in "
+            f"{example}.\nThese are an example profile (Netherlands/Germany, Python roles), "
+            f"not yours.\nRun: cp {example} {DEFAULT_PREFS_CANDIDATES[0]}   then edit it.\n",
+            file=sys.stderr,
+        )
+        return example
+    return None
 
 
 if __name__ == "__main__":

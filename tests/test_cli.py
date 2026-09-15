@@ -112,6 +112,50 @@ def test_fail_on_source_error_passes_when_sources_are_healthy(workspace):
     assert run_cli(workspace, "--fail-on-source-error") == 0
 
 
+def test_send_and_dry_run_cannot_be_combined(workspace):
+    """Passing both used to send silently."""
+    with pytest.raises(SystemExit) as exc:
+        run_cli(workspace, "--dry-run", "--send")
+    assert exc.value.code == 2
+
+
+def test_dry_run_alone_is_accepted(workspace):
+    assert run_cli(workspace, "--dry-run") == 0
+
+
+def test_no_preferences_at_all_refuses_to_run(tmp_path, monkeypatch, capsys):
+    """Never quietly search against somebody else's profile."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("PREFS_PATH", raising=False)
+    assert cli.main([]) == 2
+    err = capsys.readouterr().err
+    assert "No preferences found" in err
+    assert "cp prefs.example.yaml prefs.yaml" in err
+
+
+def test_falling_back_to_the_sample_warns_loudly(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("PREFS_PATH", raising=False)
+    monkeypatch.setattr(cli, "build_sources", lambda prefs: [StubSource()])
+    (tmp_path / "prefs.example.yaml").write_text(PREFS_YAML, encoding="utf-8")
+
+    assert cli.main(["--db", str(tmp_path / "seen.db")]) == 0
+    err = capsys.readouterr().err
+    assert "sample preferences" in err
+    assert "not yours" in err
+
+
+def test_a_real_prefs_file_produces_no_warning(workspace, capsys):
+    assert run_cli(workspace) == 0
+    assert "sample preferences" not in capsys.readouterr().err
+
+
+def test_program_name_matches_the_documented_command(capsys):
+    with pytest.raises(SystemExit):
+        cli.main(["--help"])
+    assert "moveabroad" in capsys.readouterr().out
+
+
 def test_missing_prefs_file_is_a_clean_failure(tmp_path, capsys):
     assert cli.main(["--prefs", str(tmp_path / "nope.yaml")]) == 2
     assert "Preferences file not found" in capsys.readouterr().err

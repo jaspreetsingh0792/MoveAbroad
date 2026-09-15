@@ -44,8 +44,8 @@ You do not need to understand the code to test MoveAbroad.
 ### 1. Clone it
 
 ```bash
-git clone https://github.com/jaspreetsingh0792/moveabroad.git
-cd moveabroad
+git clone https://github.com/jaspreetsingh0792/opportunities-abroad.git
+cd opportunities-abroad
 ```
 
 ### 2. Install it
@@ -101,6 +101,14 @@ moveabroad --send --prefs prefs.yaml
 ```
 
 The send mode emails new matches and records them in the local SQLite database so the same jobs are not repeatedly alerted.
+
+`digest.max_jobs` caps how many appear per run. Anything above the cap is **held, not dropped** — it stays unrecorded and surfaces on the next run, so a busy day drains over following days rather than losing jobs. The header says how many are waiting:
+
+```text
+10 new · 20 held for next run · 6 already seen · 4 too old · 6 rejected
+```
+
+If that backlog never clears, raise `max_jobs` — jobs can otherwise age past `max_age_days` before they are ever shown.
 
 ## GitHub Actions
 

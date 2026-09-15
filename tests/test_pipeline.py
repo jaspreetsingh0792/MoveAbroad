@@ -185,6 +185,48 @@ def test_classifier_annotates_only_the_digest(prefs, store):
     assert result.matches[0].sponsorship_reason == "stubbed"
 
 
+def make_many(count: int):
+    """Jobs with distinct, descending scores so ranking is deterministic."""
+    return [
+        make_job(
+            source_id=str(i),
+            title="Senior Python Engineer",
+            company=f"Co{i:02d}",
+            url=f"https://co{i}.example/jobs/{i}",
+            description="python backend " + ("visa sponsorship " * (count - i)),
+        )
+        for i in range(count)
+    ]
+
+
+def test_matches_beyond_the_cap_are_held_not_dropped(prefs, store):
+    """The cap must not silently discard: held-back jobs surface on later runs."""
+    prefs.max_jobs = 10
+    jobs = make_many(30)
+    seen_order = []
+    for _ in range(4):
+        result = run(prefs, [StubSource("stub", jobs)], store, mark_seen=True)
+        seen_order.append([m.job.company for m in result.matches])
+
+    assert [len(day) for day in seen_order] == [10, 10, 10, 0]
+    # Every job is shown exactly once, best first, with nothing lost.
+    shown = [company for day in seen_order for company in day]
+    assert shown == [f"Co{i:02d}" for i in range(30)]
+
+
+def test_backlog_is_reported(prefs, store):
+    prefs.max_jobs = 10
+    result = run(prefs, [StubSource("stub", make_many(30))], store)
+    assert result.new_count == 10
+    assert result.backlog == 20
+
+
+def test_no_backlog_when_everything_fits(prefs, store):
+    prefs.max_jobs = 100
+    result = run(prefs, [StubSource("stub", make_many(5))], store)
+    assert result.backlog == 0
+
+
 def test_limit_caps_the_digest(prefs, store):
     jobs = [
         make_job(
