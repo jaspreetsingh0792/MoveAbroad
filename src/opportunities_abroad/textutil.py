@@ -43,16 +43,33 @@ def normalize_identity(value: str | None) -> str:
     return _NON_ALNUM_RE.sub(" ", (value or "").lower()).strip()
 
 
-def fingerprint(company: str | None, title: str | None, url: str | None) -> str:
+def fingerprint(
+    company: str | None,
+    title: str | None,
+    url: str | None,
+    locale: str | None = "",
+) -> str:
     """Identity for the same role reposted under different source ids.
 
-    Scoped by host so two genuinely different companies with a shared job
-    title never collide. Empty when company or title is unknown, which the
-    callers treat as "no fingerprint" rather than a match-all.
+    Scoped by host so two companies sharing a job title never collide, and by
+    ``locale`` so one company advertising the same title in two places stays
+    two openings. Callers pass a coarse locale (a country bucket rather than
+    the raw location) so that "Amsterdam" and "Amsterdam, Netherlands" still
+    collapse to one job.
+
+    Empty when company or title is unknown, which callers treat as "no
+    fingerprint" rather than a match-all.
     """
     normalized_company = normalize_identity(company)
     normalized_title = normalize_identity(title)
     if not normalized_company or not normalized_title:
         return ""
-    seed = f"{normalized_company}|{normalized_title}|{url_host(url)}"
+    seed = "|".join(
+        (
+            normalized_company,
+            normalized_title,
+            url_host(url),
+            normalize_identity(locale),
+        )
+    )
     return hashlib.blake2s(seed.encode("utf-8"), digest_size=16).hexdigest()
