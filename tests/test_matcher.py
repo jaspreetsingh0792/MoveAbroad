@@ -221,6 +221,29 @@ def test_score_weights_are_configurable():
     assert score_job(job, prefs).score > score_job(job, prefs_from_dict(base)).score
 
 
+def test_keyword_hits_are_capped():
+    base = {"include_keywords": ["python", "django", "flask", "fastapi", "backend", "aws"]}
+    capped = prefs_from_dict({**base, "score_caps": {"keyword_hit": 2}})
+    uncapped = prefs_from_dict({**base, "score_caps": {"keyword_hit": 0}})
+    job = make_job(
+        title="Consultant",
+        description="python django flask fastapi backend aws",
+        location="Remote",
+        remote=True,
+    )
+    assert capped.scored_hits("keyword_hit", 6) == 2
+    assert uncapped.scored_hits("keyword_hit", 6) == 6
+    assert score_job(job, capped).score < score_job(job, uncapped).score
+
+
+def test_default_caps_apply_without_configuration():
+    prefs = prefs_from_dict({"include_keywords": ["a", "b", "c", "d", "e", "f"]})
+    assert prefs.scored_hits("keyword_hit", 10) == 4
+    assert prefs.scored_hits("title_hit", 10) == 3
+    assert prefs.scored_hits("visa_hit", 10) == 2
+    assert prefs.scored_hits("remote", 1) == 1
+
+
 def test_visa_require_keeps_only_sponsoring_jobs(sample_prefs):
     sample_prefs.visa_require = True
     stats = MatchStats()

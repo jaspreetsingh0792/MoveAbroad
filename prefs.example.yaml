@@ -49,8 +49,38 @@ title_exclude:
   - stage
   - stagiair
 
-# Leave empty to accept any title that passes the filters above.
-title_include: []
+# A hard filter on the title: a posting must contain one of these to survive.
+# Without it, any posting that merely mentions one of your include_keywords
+# gets through — "Product Manager" for a team that uses Python, for instance.
+# Widen this list if you also want adjacent roles; empty accepts any title.
+title_include:
+  - engineer
+  - engineering
+  - developer
+  - development
+  - programmer
+  - architect
+  - sre
+  - site reliability
+  - devops
+  - platform
+  - infrastructure
+  - backend
+  - back-end
+  - fullstack
+  - full-stack
+  - full stack
+  - data
+  - machine learning
+  - ml
+  - mlops
+  - security
+  - scientist
+  - technical lead
+  - tech lead
+  - staff
+  - principal
+  - cto
 
 # Drop postings older than this when the source reports a date. 0 disables.
 max_age_days: 14
@@ -150,6 +180,14 @@ score_weights:
   keyword_hit: 3    # per include_keyword found anywhere
   remote: 4         # flat bonus for a remote role
   visa_hit: 5       # per visa_keyword found anywhere
+
+# Ceiling on how many hits of each kind still earn score, so a posting that
+# lists twenty technologies cannot outrank a well-matched role that names a
+# few. 0 means uncapped.
+score_caps:
+  title_hit: 3
+  keyword_hit: 4
+  visa_hit: 2
 
 # Country or city -> bonus, matched against the job's location. Country names
 # expand through the built-in aliases (Netherlands also covers NL, Amsterdam,

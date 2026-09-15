@@ -20,6 +20,14 @@ DEFAULT_LOCATION_WEIGHTS: dict[str, int] = {
     "germany": 3,
     "europe": 3,
 }
+# How many hits of each kind can still earn score. Without a ceiling a posting
+# that lists twenty technologies outranks a well-matched role that names a few.
+# 0 means uncapped.
+DEFAULT_SCORE_CAPS: dict[str, int] = {
+    "title_hit": 3,
+    "keyword_hit": 4,
+    "visa_hit": 2,
+}
 ATS_NAMES = ("greenhouse", "lever", "ashby")
 
 
@@ -45,6 +53,7 @@ class Prefs:
     max_jobs: int = 25
     save_html_to: str | None = None
     score_weights: dict[str, int] = field(default_factory=lambda: dict(DEFAULT_SCORE_WEIGHTS))
+    score_caps: dict[str, int] = field(default_factory=lambda: dict(DEFAULT_SCORE_CAPS))
     location_weights: dict[str, int] = field(
         default_factory=lambda: dict(DEFAULT_LOCATION_WEIGHTS)
     )
@@ -66,6 +75,11 @@ class Prefs:
 
     def weight(self, name: str) -> int:
         return int(self.score_weights.get(name, DEFAULT_SCORE_WEIGHTS.get(name, 0)))
+
+    def scored_hits(self, name: str, hits: int) -> int:
+        """How many hits of this kind actually count toward the score."""
+        cap = int(self.score_caps.get(name, DEFAULT_SCORE_CAPS.get(name, 0)))
+        return hits if cap <= 0 else min(hits, cap)
 
 
 def load_prefs(path: str | Path) -> Prefs:
@@ -124,6 +138,7 @@ def prefs_from_dict(data: dict[str, Any]) -> Prefs:
         max_jobs=int(digest.get("max_jobs", 25)),
         save_html_to=str(save_html_to) if save_html_to else None,
         score_weights=_int_map(data.get("score_weights"), DEFAULT_SCORE_WEIGHTS),
+        score_caps=_int_map(data.get("score_caps"), DEFAULT_SCORE_CAPS),
         location_weights=_int_map(
             data.get("location_weights"), DEFAULT_LOCATION_WEIGHTS, replace=True
         ),
