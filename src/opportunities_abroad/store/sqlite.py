@@ -4,7 +4,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-from opportunities_abroad.matcher.engine import country_for_location
+from opportunities_abroad.matcher.engine import place_key
 from opportunities_abroad.models import Job
 from opportunities_abroad.textutil import fingerprint, normalize_url
 
@@ -12,16 +12,16 @@ from opportunities_abroad.textutil import fingerprint, normalize_url
 def job_fingerprint(job: Job) -> str:
     """Cross-source identity for a job.
 
-    The location is reduced to a country bucket first: sources spell places
+    The location is reduced to a place key first: sources spell places
     differently ("Amsterdam" vs "Amsterdam, Netherlands"), so matching the raw
     string would defeat the dedupe, while ignoring location entirely would
-    merge two genuinely separate openings in different countries.
+    merge separate openings into one.
     """
     return fingerprint(
         job.company,
         job.title,
         job.url,
-        country_for_location(job.location, remote=job.remote is True),
+        place_key(job.location, remote=job.remote is True),
     )
 
 
@@ -103,7 +103,7 @@ class SqliteJobStore:
                     row["company"],
                     row["title"],
                     row["url"],
-                    country_for_location(row["location"] or ""),
+                    place_key(row["location"] or ""),
                 ),
                 row["job_key"],
             )
