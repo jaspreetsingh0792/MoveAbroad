@@ -44,8 +44,8 @@ You do not need to understand the code to test MoveAbroad.
 ### 1. Clone it
 
 ```bash
-git clone https://github.com/jaspreetsingh0792/opportunities-abroad.git
-cd opportunities-abroad
+git clone https://github.com/jaspreetsingh0792/moveabroad.git
+cd moveabroad
 ```
 
 ### 2. Install it

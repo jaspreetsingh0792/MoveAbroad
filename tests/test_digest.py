@@ -35,6 +35,9 @@ def a_match(score: int = 10, **job_kwargs) -> Match:
 
 @pytest.fixture
 def result() -> RunResult:
+    # The renderers read the real clock, so these ages must be relative to it.
+    # Anchoring them to a fixed NOW made the suite pass only on that date.
+    today = datetime.now(timezone.utc)
     return RunResult(
         matches=[
             a_match(
@@ -42,7 +45,7 @@ def result() -> RunResult:
                 source_id="1",
                 title="Senior Python Engineer",
                 location="Amsterdam, Netherlands",
-                posted_at=NOW - timedelta(days=3),
+                posted_at=today - timedelta(days=3),
                 salary="€70k–90k",
                 sponsorship="yes",
                 sponsorship_reason="Offers relocation and a 30% ruling.",
@@ -52,7 +55,7 @@ def result() -> RunResult:
                 source_id="2",
                 title="Backend Engineer",
                 location="Berlin, Germany",
-                posted_at=NOW - timedelta(days=1),
+                posted_at=today - timedelta(days=1),
             ),
             a_match(
                 score=30,
