@@ -81,7 +81,7 @@ class EmailNotifier(Notifier):
             context = ssl.create_default_context()
             with smtplib.SMTP_SSL(self.host, self.port, context=context, timeout=30) as smtp:
                 self._login(smtp)
-                smtp.sendmail(self.mail_from, _split_addrs(self.mail_to), message.as_string())
+                smtp.sendmail(self.mail_from, split_addrs(self.mail_to), message.as_string())
             return
 
         with smtplib.SMTP(self.host, self.port, timeout=30) as smtp:
@@ -91,12 +91,12 @@ class EmailNotifier(Notifier):
                 smtp.starttls(context=context)
                 smtp.ehlo()
             self._login(smtp)
-            smtp.sendmail(self.mail_from, _split_addrs(self.mail_to), message.as_string())
+            smtp.sendmail(self.mail_from, split_addrs(self.mail_to), message.as_string())
 
     def _login(self, smtp: smtplib.SMTP) -> None:
         if self.user:
             smtp.login(self.user, self.password or "")
 
 
-def _split_addrs(value: str) -> list[str]:
+def split_addrs(value: str) -> list[str]:
     return [part.strip() for part in value.replace(";", ",").split(",") if part.strip()]
