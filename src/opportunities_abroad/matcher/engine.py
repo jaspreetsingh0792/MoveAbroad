@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from opportunities_abroad import seniority
+from opportunities_abroad import relocation, seniority
 from opportunities_abroad.models import Job, Match
 from opportunities_abroad.prefs import Prefs
 from opportunities_abroad.textutil import strip_html
 from opportunities_abroad.visa import SponsorRegister, has_hard_restriction
+
+logger = logging.getLogger(__name__)
 
 # Expand user-facing country names into tokens that commonly appear in job posts.
 COUNTRY_ALIASES: dict[str, set[str]] = {
@@ -131,6 +134,7 @@ class MatchStats:
     rejected_title: int = 0
     rejected_seniority: int = 0
     rejected_visa: int = 0
+    rejected_relocation: int = 0
 
 
 def match_jobs(
@@ -196,7 +200,10 @@ def score_job(
     visa_hits = [] if restricted else _keyword_hits(prefs.visa_keywords, haystack)
     on_register = bool(register and register.contains(job.company))
     sponsorship_likely = not restricted and (
-        job.visa_sponsorship is True or on_register or bool(visa_hits)
+        job.visa_sponsorship is True
+        or on_register
+        or bool(visa_hits)
+        or relocation.offers_move(haystack)
     )
     if prefs.visa_require and not sponsorship_likely:
         _count(stats, "rejected_visa")
@@ -237,6 +244,21 @@ def score_job(
         _count(stats, "rejected_location")
         return None
 
+    eligibility = relocation.assess(
+        job,
+        haystack,
+        prefs,
+        remote="remote" in reasons,
+        sponsorship_likely=sponsorship_likely,
+        restricted=restricted,
+        on_register=on_register,
+        visa_hits=visa_hits,
+    )
+    if not eligibility.ok:
+        logger.debug("Not workable from home: %s (%s)", job.title, eligibility.reason)
+        _count(stats, "rejected_relocation")
+        return None
+
     title_hits = _keyword_hits(prefs.include_keywords, title_l)
     score = prefs.weight("title_hit") * prefs.scored_hits("title_hit", len(title_hits))
     score += prefs.weight("keyword_hit") * prefs.scored_hits("keyword_hit", len(include_hits))
@@ -262,7 +284,13 @@ def score_job(
     elif job.visa_sponsorship is True:
         reasons.append("visa:source-flagged")
 
-    match = Match(job=job, score=score, reasons=reasons, seniority=level)
+    match = Match(
+        job=job,
+        score=score,
+        reasons=reasons,
+        seniority=level,
+        highlight=eligibility.highlight,
+    )
     if restricted:
         # Deterministic evidence, so the classifier has nothing to add.
         match.sponsorship = "no"

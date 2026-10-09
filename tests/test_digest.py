@@ -138,15 +138,35 @@ def test_remote_bucket_only_catches_placeless_roles():
 def test_text_digest_contains_every_detail(result):
     body = render_text(result)
     assert header_line(result) in body
-    assert "Netherlands (1)" in body
-    assert "Senior Python Engineer @ Acme" in body
+    assert "🇳🇱 Netherlands · 1" in body
+    assert "1. Senior Python Engineer" in body
+    assert "Acme · Amsterdam, Netherlands" in body
     assert "3d ago" in body
     assert "€70k–90k" in body
-    assert "test" in body  # source name
-    assert "score 40" in body
-    assert "sponsorship: yes — Offers relocation and a 30% ruling." in body
-    assert "why: remote, keywords:python" in body
-    assert "https://example.com/jobs/1" in body
+    assert "(via test)" in body  # source credit
+    assert "✈ Visa sponsorship likely — Offers relocation and a 30% ruling." in body
+    assert "→ https://example.com/jobs/1" in body
+
+
+def test_text_digest_drops_internal_scoring_noise(result):
+    body = render_text(result)
+    assert "score 40" not in body
+    assert "why:" not in body
+    assert "keywords:python" not in body
+
+
+def test_digest_numbers_jobs_across_groups(result):
+    body = render_text(result)
+    assert body.index("1. Senior Python Engineer") < body.index("2. ")
+
+
+def test_html_digest_has_cards_badges_and_a_button(result):
+    body = render_html(result)
+    assert "View job →" in body
+    assert "Senior Python Engineer" in body
+    assert "✈ Visa sponsorship likely" in body
+    assert "new jobs" in body and "visa / relocation" in body
+    assert "via test" in body
 
 
 def test_text_digest_when_empty():
@@ -169,7 +189,7 @@ def test_html_digest_groups_and_escapes():
     assert "<script>alert(1)</script>" not in body
     assert "&lt;script&gt;" in body
     assert "Sponsors &amp; relocates" in body
-    assert "<h3" in body and "Netherlands" in body
+    assert "<h2" in body and "Netherlands" in body
 
 
 def test_html_digest_when_empty():
@@ -242,7 +262,7 @@ def test_html_digest_warns_and_lists_sources():
     body = render_html(unhealthy_result())
     assert "Source problems this run" in body
     assert "arbeitnow: FAILED" in body
-    assert "<h3" in body and "Sources" in body
+    assert "Sources:" in body
 
 
 def test_healthy_run_shows_sources_without_a_warning():
@@ -269,7 +289,7 @@ def test_save_html_creates_parent_directories(tmp_path, result):
     target = tmp_path / "nested" / "digest.html"
     written = save_html(result, target)
     assert written == target
-    assert "Opportunities Abroad" in target.read_text(encoding="utf-8")
+    assert "MoveAbroad" in target.read_text(encoding="utf-8")
 
 
 def test_save_html_overwrites_existing(tmp_path):

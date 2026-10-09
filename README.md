@@ -30,12 +30,14 @@ Freshness + title + seniority + keyword filters
       ↓
 Location + remote eligibility + sponsorship signals
       ↓
+Workable from where you live? (remote eligibility, visa, language)
+      ↓
 Cross-source deduplication
       ↓
 Ranked daily digest
 ```
 
-Supported sources include Remotive, Arbeitnow, Remote OK, Greenhouse, Lever, Ashby, and optional Adzuna. No LinkedIn/Indeed/Naukri/Glassdoor scraping is used.
+Supported sources include Remotive, Arbeitnow, Remote OK, Jobicy, Himalayas, Greenhouse, Lever, Ashby, and optional Adzuna. Everything except Adzuna works without an API key. No LinkedIn/Indeed/Naukri/Glassdoor scraping is used.
 
 ## First run
 
@@ -145,7 +147,7 @@ Anyone can get the digest by email without signing up for anything or holding a 
 
 - **Nothing to configure but `EMAIL_TO`.** No account, token or SMTP password.
 - **Private by default.** Each run publishes to a fresh random topic with server-side caching off, so the digest is not left readable on the public server.
-- **Plain text, best jobs first.** ntfy keeps a message under 4 KB, so the email lists each match as title, facts and link, and says how many more did not fit. Use `--save-html` or SMTP for the full HTML digest.
+- **Plain text, best jobs first.** ntfy keeps a message under 4 KB, so the email lists each match as a numbered entry (title, company, location, work mode, pay, visa note and link) and says how many more did not fit. With SMTP you get the full HTML digest: one card per job with badges and a *View job* button; `--save-html` writes the same page locally.
 - **Rate-limited.** The public ntfy.sh server allows a small number of emails per day per IP, ample for one digest a day. For more, run your own ntfy server and set `NTFY_URL`.
 - Email arrives from ntfy's sender address; check your spam folder the first time.
 
@@ -170,6 +172,27 @@ The matching pipeline considers:
 9. Ranking
 
 The sample preferences are aimed at an Indian software engineer targeting the Netherlands, Germany, wider EU, and suitable international remote roles. Edit the preferences for your own profile.
+
+## Jobs you can actually take from India
+
+Set `candidate` in `prefs.yaml` and every job must pass one more check before it is emailed: *can someone living there take it?*
+
+```yaml
+candidate:
+  based_in: India
+  needs_visa: true
+  languages: [English]
+  require_visa_evidence: true
+```
+
+A job is kept only when it is one of:
+
+- **Remote and open to you.** Remote OK, Jobicy and Himalayas publish which countries or regions a remote job hires from; remote roles limited to *Europe*, *US* or *Germany* are dropped, because a remote contract for EU residents is not workable from India. Text such as *"you must be based in the UK"* counts too.
+- **A real move.** The posting does not say *local candidates only*, *no relocation*, *must already live in…*, or require citizenship or security clearance. With `require_visa_evidence: true`, it must also show sponsorship or relocation evidence: a source flag, a sponsor register, or one of your `visa_keywords`.
+
+Either way, jobs that require a language you do not list (*"fluent German required"*, *"Dutch C1"*) or are written in one are dropped; *"German is a plus"* is fine. The digest says why each job made it (*🌍 Open to India*, *✈ Employer is a licensed visa sponsor*) and how many were dropped as *not workable from India*.
+
+Remove the `candidate` section to switch the check off.
 
 ## Visa sponsorship
 

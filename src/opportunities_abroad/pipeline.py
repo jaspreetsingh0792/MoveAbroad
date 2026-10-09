@@ -85,6 +85,8 @@ def run(
         rejected_title=stats.rejected_title,
         rejected_seniority=stats.rejected_seniority,
         rejected_visa=stats.rejected_visa,
+        rejected_relocation=stats.rejected_relocation,
+        based_in=prefs.candidate_based_in,
         sources=source_health,
     )
 

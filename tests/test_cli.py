@@ -15,6 +15,8 @@ sources:
   remotive: false
   arbeitnow: false
   remoteok: false
+  jobicy: false
+  himalayas: false
   adzuna: false
   greenhouse: false
   lever: false
@@ -62,7 +64,7 @@ def test_save_html_flag_writes_on_a_dry_run(workspace, capsys):
     assert run_cli(workspace, "--save-html", str(target)) == 0
 
     body = target.read_text(encoding="utf-8")
-    assert "Opportunities Abroad" in body
+    assert "MoveAbroad" in body
     assert "Senior Python Engineer" in body
     assert str(target) in capsys.readouterr().out
 

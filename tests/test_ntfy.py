@@ -47,9 +47,9 @@ def test_sends_one_uncached_email_per_recipient_to_a_random_topic():
     assert all(r.url.host == "ntfy.sh" for r in sent)
     topics = {r.url.path for r in sent}
     assert len(topics) == 2 and all(t.startswith("/moveabroad-") for t in topics)
-    assert "1 matching role " in sent[0].headers["Title"]
+    assert sent[0].headers["Title"].startswith("MoveAbroad: 1 new job abroad")
     body = sent[0].content.decode("utf-8")
-    assert "Python Engineer 0 @ Acme" in body
+    assert "1. Python Engineer 0" in body
     assert "https://x/0" in body
 
 
@@ -76,7 +76,7 @@ def test_rate_limit_is_explained():
 def test_compact_digest_stays_under_the_limit_and_counts_the_rest():
     body = render_compact_text(a_result(200), max_bytes=MAX_BODY_BYTES)
     assert len(body.encode("utf-8")) <= MAX_BODY_BYTES
-    assert "Python Engineer 0 @" in body
+    assert "1. Python Engineer 0" in body
     assert "more not shown." in body
 
 

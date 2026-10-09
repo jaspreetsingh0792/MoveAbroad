@@ -3,11 +3,10 @@ from __future__ import annotations
 import os
 import smtplib
 import ssl
-from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-from opportunities_abroad.digest import render_html, render_text
+from opportunities_abroad.digest import email_subject, render_html, render_text
 from opportunities_abroad.models import RunResult
 from opportunities_abroad.notifiers.base import Notifier
 
@@ -61,12 +60,7 @@ class EmailNotifier(Notifier):
 
     def send(self, result: RunResult) -> None:
         self.require_configured()
-        count = result.new_count
-        subject = (
-            f"[opportunities-abroad] {count} matching role"
-            f"{'s' if count != 1 else ''} "
-            f"({datetime.now(timezone.utc).date().isoformat()})"
-        )
+        subject = email_subject(result)
         text_body = render_text(result)
         html_body = render_html(result)
 

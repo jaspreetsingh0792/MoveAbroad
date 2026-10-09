@@ -137,7 +137,9 @@ work_mode:
 
 # If a remote job names a required candidate location, accept these
 # and reject clearly US/UK-only (or similar) restrictions unless those
-# countries are in `locations.countries`.
+# countries are in `locations.countries`. With `candidate.based_in` set, a
+# remote job limited to Europe is still dropped unless it also offers a move:
+# a European remote contract is not workable from India.
 remote:
   accept_locations:
     - Worldwide
@@ -159,6 +161,24 @@ remote:
     - Canada only
     - UK only
     - United Kingdom only
+
+# Who you are and where you live now. This is what keeps jobs you cannot
+# actually take out of the digest. A job is kept only when it is either
+#   - remote AND open to people living in `based_in` (worldwide, APAC, Asia,
+#     or the country itself), with nothing in the text limiting residence
+#     elsewhere; or
+#   - a real move: no "local candidates only", "no relocation", citizenship or
+#     security clearance, and no required language you do not speak.
+# Postings written in a language you do not list are dropped too: a posting in
+# German wants a German speaker. Delete this section to turn the check off.
+candidate:
+  based_in: India
+  needs_visa: true          # false if you already have the right to work there
+  languages: [English]      # add German, Dutch, ... if you speak them
+  # true: an onsite/hybrid job abroad must also show visa or relocation
+  # evidence (source flag, sponsor register, or a visa_keyword). Stricter,
+  # fewer but far more relevant jobs. false keeps postings that say nothing.
+  require_visa_evidence: true
 
 # Visa sponsorship handling.
 #   require:    drop jobs unless the source flags sponsorship or a visa_keyword hits
@@ -225,6 +245,8 @@ sources:
   remotive: true
   arbeitnow: true
   remoteok: true   # keyless feed from public-apis; credited and linked in the digest
+  jobicy: true     # keyless remote jobs; each lists the regions it hires from
+  himalayas: true  # keyless remote jobs; each lists the countries it hires from
   adzuna: true   # live calls only if ADZUNA_APP_ID and ADZUNA_API_KEY are set
   greenhouse: true
   lever: true
@@ -264,3 +286,9 @@ arbeitnow:
 
 http:
   timeout_seconds: 30
+
+# Pages fetched per run from the paginated keyless boards.
+jobicy:
+  max_pages: 1      # up to 100 jobs per page; Jobicy asks for at most one sync an hour
+himalayas:
+  max_pages: 5      # 20 jobs per page

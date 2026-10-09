@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import os
 import secrets
-from datetime import datetime, timezone
 
 import httpx
 
-from opportunities_abroad.digest import render_compact_text
+from opportunities_abroad.digest import email_subject, render_compact_text
 from opportunities_abroad.http import make_client
 from opportunities_abroad.models import RunResult
 from opportunities_abroad.notifiers.base import Notifier
@@ -55,11 +54,7 @@ class NtfyEmailNotifier(Notifier):
 
     def send(self, result: RunResult) -> None:
         self.require_configured()
-        count = result.new_count
-        title = (
-            f"MoveAbroad: {count} matching role{'s' if count != 1 else ''} "
-            f"({datetime.now(timezone.utc).date().isoformat()})"
-        )
+        title = email_subject(result)
         body = render_compact_text(result, max_bytes=MAX_BODY_BYTES)
         client = self._client or make_client()
         owns_client = self._client is None
