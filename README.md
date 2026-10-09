@@ -35,7 +35,7 @@ Cross-source deduplication
 Ranked daily digest
 ```
 
-Supported sources include Remotive, Arbeitnow, Greenhouse, Lever, Ashby, and optional Adzuna. No LinkedIn/Indeed/Naukri/Glassdoor scraping is used.
+Supported sources include Remotive, Arbeitnow, Remote OK, Greenhouse, Lever, Ashby, and optional Adzuna. No LinkedIn/Indeed/Naukri/Glassdoor scraping is used.
 
 ## First run
 
@@ -94,11 +94,14 @@ Run the dry-run repeatedly while tuning your preferences. This is the recommende
 
 ### 5. Send the digest
 
-Configure SMTP through `.env` and run:
+Email is free and needs **no API key, no account and no SMTP server**. Set just your address and send:
 
 ```bash
+echo "EMAIL_TO=you@example.com" > .env
 moveabroad --send --prefs prefs.yaml
 ```
+
+See [Free email delivery](#free-email-delivery) for how that works, and for switching to your own SMTP server instead.
 
 The send mode emails new matches and records them in the local SQLite database so the same jobs are not repeatedly alerted.
 
@@ -119,18 +122,36 @@ Add these repository secrets:
 | Secret | Required | Purpose |
 | --- | --- | --- |
 | `PREFS_YAML` | Yes | Your complete `prefs.yaml` |
-| `SMTP_HOST` | Yes | SMTP server |
-| `EMAIL_FROM` | Yes | Sender address |
-| `EMAIL_TO` | Yes | Recipient address(es) |
+| `EMAIL_TO` | Yes | Recipient address(es), comma-separated |
+| `SMTP_HOST` | No | Use your own SMTP server instead of the free keyless delivery |
+| `EMAIL_FROM` | With SMTP | Sender address |
+| `NTFY_URL` | No | Self-hosted ntfy server for the keyless delivery |
+| `EMAIL_PROVIDER` | No | Force `smtp` or `ntfy` |
 | `SMTP_PORT` | No | Defaults to 587 |
 | `SMTP_USER` / `SMTP_PASSWORD` | No | SMTP authentication |
 | `SMTP_STARTTLS` | No | Defaults to true |
 | `ADZUNA_APP_ID` / `ADZUNA_API_KEY` | No | Enables Adzuna |
 | `ANTHROPIC_API_KEY` | No | Enables optional sponsorship classifier |
 
+So the minimum setup is two secrets, `PREFS_YAML` and `EMAIL_TO`: no keys to obtain anywhere.
+
 Alert history is kept in the GitHub Actions cache rather than committed to the public repository.
 
 You can also trigger the workflow manually from the Actions tab.
+
+## Free email delivery
+
+Anyone can get the digest by email without signing up for anything or holding a key. When `SMTP_HOST` is not set, MoveAbroad hands the digest to [ntfy](https://ntfy.sh)'s free email forwarding, which emails it to each address in `EMAIL_TO`.
+
+- **Nothing to configure but `EMAIL_TO`.** No account, token or SMTP password.
+- **Private by default.** Each run publishes to a fresh random topic with server-side caching off, so the digest is not left readable on the public server.
+- **Plain text, best jobs first.** ntfy keeps a message under 4 KB, so the email lists each match as title, facts and link, and says how many more did not fit. Use `--save-html` or SMTP for the full HTML digest.
+- **Rate-limited.** The public ntfy.sh server allows a small number of emails per day per IP, ample for one digest a day. For more, run your own ntfy server and set `NTFY_URL`.
+- Email arrives from ntfy's sender address; check your spam folder the first time.
+
+Why not one of the email APIs in [public-apis](https://github.com/public-apis/public-apis#email)? Every one that can *send* mail (SendGrid, Mailtrap, SMTPfast, …) requires an API key; the keyless ones only validate addresses or provide disposable inboxes.
+
+Want HTML email from your own address? Set `SMTP_HOST`, `EMAIL_FROM` and, if needed, `SMTP_USER` / `SMTP_PASSWORD`; SMTP is then used automatically. `EMAIL_PROVIDER=smtp` or `EMAIL_PROVIDER=ntfy` forces either one.
 
 ## Matching
 

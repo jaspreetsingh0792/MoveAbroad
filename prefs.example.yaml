@@ -224,6 +224,7 @@ digest:
 sources:
   remotive: true
   arbeitnow: true
+  remoteok: true   # keyless feed from public-apis; credited and linked in the digest
   adzuna: true   # live calls only if ADZUNA_APP_ID and ADZUNA_API_KEY are set
   greenhouse: true
   lever: true

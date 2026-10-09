@@ -30,8 +30,14 @@ jobs:
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
         run: |
+          # Without SMTP_HOST the digest goes out through the free keyless
+          # ntfy email delivery, which needs nothing but EMAIL_TO.
+          required="PREFS_YAML EMAIL_TO"
+          if [ -n "$SMTP_HOST" ]; then
+            required="$required EMAIL_FROM"
+          fi
           missing=""
-          for name in PREFS_YAML SMTP_HOST EMAIL_FROM EMAIL_TO; do
+          for name in $required; do
             if [ -z "${!name}" ]; then
               missing="$missing $name"
             fi
@@ -90,6 +96,8 @@ jobs:
           SMTP_STARTTLS: ${{ secrets.SMTP_STARTTLS }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          EMAIL_PROVIDER: ${{ secrets.EMAIL_PROVIDER }}
+          NTFY_URL: ${{ secrets.NTFY_URL }}
           ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}
           ADZUNA_API_KEY: ${{ secrets.ADZUNA_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

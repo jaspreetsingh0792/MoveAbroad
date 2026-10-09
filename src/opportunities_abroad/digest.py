@@ -129,6 +129,50 @@ def render_text(result: RunResult) -> str:
     return "\n".join(lines)
 
 
+def render_compact_text(result: RunResult, max_bytes: int) -> str:
+    """Plain-text digest that fits in ``max_bytes`` of UTF-8.
+
+    For channels with a hard body limit. Jobs are listed best first, one title
+    and link each; whatever does not fit is counted rather than cut mid-line.
+    """
+    head = [header_line(result)]
+    warning = health_warning(result)
+    if warning:
+        head.append(warning)
+    head.append("")
+    if not result.matches:
+        return "\n".join([*head, "No new matching jobs this run."])
+
+    entries: list[str] = []
+    for country, matches in group_by_country(result.matches):
+        for match in matches:
+            job = match.job
+            facts = " | ".join(_facts(match))
+            entries.append(
+                f"[{country}] {job.title} @ {job.company or 'Unknown company'}\n"
+                f"{facts}\n{job.url}\n"
+            )
+
+    def size(text: str) -> int:
+        return len(text.encode("utf-8"))
+
+    tail = FOOTER
+    body = "\n".join(head)
+    kept = 0
+    for index, entry in enumerate(entries):
+        remaining = len(entries) - index - 1
+        # Reserve room for the "more" line any later cut would need.
+        more = f"…and {remaining} more not shown.\n\n" if remaining else ""
+        if size(body + "\n" + entry + "\n" + more + tail) > max_bytes:
+            break
+        body += "\n" + entry
+        kept += 1
+    dropped = len(entries) - kept
+    if dropped:
+        body += f"\n…and {dropped} more not shown.\n"
+    return f"{body}\n{tail}"
+
+
 def _sources_block(result: RunResult) -> list[str]:
     if not result.sources:
         return []

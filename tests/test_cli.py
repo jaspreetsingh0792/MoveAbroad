@@ -14,6 +14,7 @@ locations:
 sources:
   remotive: false
   arbeitnow: false
+  remoteok: false
   adzuna: false
   greenhouse: false
   lever: false
@@ -172,3 +173,16 @@ def test_no_enabled_sources_is_reported(workspace, monkeypatch, capsys):
     monkeypatch.setattr(cli, "build_sources", lambda prefs: [])
     assert run_cli(workspace) == 2
     assert "No sources enabled" in capsys.readouterr().err
+
+
+def test_send_with_only_email_to_uses_keyless_delivery(workspace, monkeypatch):
+    for key in ("SMTP_HOST", "EMAIL_FROM", "EMAIL_PROVIDER"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("EMAIL_TO", "me@example.com")
+    sent = []
+    monkeypatch.setattr(
+        "opportunities_abroad.notifiers.ntfy.NtfyEmailNotifier.send",
+        lambda self, result: sent.append((self.mail_to, result.new_count)),
+    )
+    assert run_cli(workspace, "--send") == 0
+    assert sent == [("me@example.com", 1)]

@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from opportunities_abroad import __version__
 from opportunities_abroad.classifier import build_classifier
 from opportunities_abroad.digest import render_console, save_html
-from opportunities_abroad.notifiers.email import EmailConfigError, EmailNotifier
+from opportunities_abroad.notifiers import EmailConfigError, build_email_notifier
 from opportunities_abroad.pipeline import run
 from opportunities_abroad.prefs import load_prefs
 from opportunities_abroad.sources.registry import build_sources
@@ -47,9 +47,10 @@ def main(argv: list[str] | None = None) -> int:
         print(str(exc), file=sys.stderr)
         return 2
 
-    notifier = EmailNotifier()
+    notifier = None
     if args.send:
         try:
+            notifier = build_email_notifier()
             notifier.require_configured()
         except EmailConfigError as exc:
             print(str(exc), file=sys.stderr)
@@ -65,7 +66,7 @@ def main(argv: list[str] | None = None) -> int:
             prefs,
             sources,
             store,
-            notifier=notifier if args.send else None,
+            notifier=notifier,
             classifier=build_classifier(prefs, store),
             register=SponsorRegister.load(args.sponsor_register or prefs.sponsor_register_path),
             send=args.send,
