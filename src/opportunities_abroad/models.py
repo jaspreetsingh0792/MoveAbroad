@@ -50,6 +50,9 @@ class Match:
     seniority: str = "unknown"
     sponsorship: str | None = None
     sponsorship_reason: str | None = None
+    # Why someone moving from abroad can take this job, e.g. "Open worldwide"
+    # or "Visa sponsorship offered". Empty when nothing stands out.
+    highlight: str = ""
 
 
 @dataclass(slots=True)
@@ -104,6 +107,9 @@ class RunResult:
     rejected_title: int = 0
     rejected_seniority: int = 0
     rejected_visa: int = 0
+    # Jobs dropped because they are not workable from the candidate's country.
+    rejected_relocation: int = 0
+    based_in: str = ""
     sources: list[SourceHealth] = field(default_factory=list)
 
     @property

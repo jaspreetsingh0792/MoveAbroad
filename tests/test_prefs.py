@@ -48,11 +48,39 @@ def test_example_prefs_reject_a_non_technical_title():
     engineer = make_job(
         title="Senior Backend Engineer",
         location="Amsterdam, Netherlands",
-        description="Python backend role.",
+        # The example prefs want visa evidence for a move from India.
+        description="Python backend role. We sponsor visas.",
         remote=False,
     )
     assert score_job(manager, prefs) is None
     assert score_job(engineer, prefs) is not None
+
+
+def test_example_prefs_only_keep_jobs_workable_from_india():
+    path = Path(__file__).resolve().parents[1] / "prefs.example.yaml"
+    prefs = load_prefs(path)
+    assert prefs.candidate_based_in == "India"
+    silent = make_job(
+        title="Senior Backend Engineer",
+        location="Amsterdam, Netherlands",
+        description="Python backend role.",
+        remote=False,
+    )
+    eu_remote = make_job(
+        title="Senior Backend Engineer",
+        location="Europe",
+        description="Python backend role.",
+        remote=True,
+    )
+    worldwide = make_job(
+        title="Senior Backend Engineer",
+        location="Worldwide",
+        description="Python backend role.",
+        remote=True,
+    )
+    assert score_job(silent, prefs) is None
+    assert score_job(eu_remote, prefs) is None
+    assert score_job(worldwide, prefs) is not None
 
 
 def test_defaults_when_keys_are_absent():

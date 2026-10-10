@@ -8,6 +8,8 @@ from opportunities_abroad.sources.arbeitnow import ArbeitnowSource
 from opportunities_abroad.sources.ashby import AshbySource
 from opportunities_abroad.sources.base import JobSource
 from opportunities_abroad.sources.greenhouse import GreenhouseSource
+from opportunities_abroad.sources.himalayas import HimalayasSource
+from opportunities_abroad.sources.jobicy import JobicySource
 from opportunities_abroad.sources.lever import LeverSource
 from opportunities_abroad.sources.remoteok import RemoteOKSource
 from opportunities_abroad.sources.remotive import RemotiveSource
@@ -18,6 +20,8 @@ _BUILTIN: dict[str, type[JobSource]] = {
     "remotive": RemotiveSource,
     "arbeitnow": ArbeitnowSource,
     "remoteok": RemoteOKSource,
+    "jobicy": JobicySource,
+    "himalayas": HimalayasSource,
     "adzuna": AdzunaSource,
     "greenhouse": GreenhouseSource,
     "lever": LeverSource,

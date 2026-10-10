@@ -75,6 +75,13 @@ class Prefs:
     arbeitnow_max_pages: int = 2
     arbeitnow_visa_sponsorship: bool | None = None
     http_timeout_seconds: float = 30.0
+    # Where the candidate lives now. Empty turns the relocation check off.
+    candidate_based_in: str = ""
+    candidate_needs_visa: bool = True
+    candidate_languages: list[str] = field(default_factory=lambda: ["english"])
+    candidate_require_evidence: bool = False
+    jobicy_max_pages: int = 1
+    himalayas_max_pages: int = 5
 
     def source_is_enabled(self, name: str) -> bool:
         return self.source_enabled.get(name, True)
@@ -120,6 +127,9 @@ def prefs_from_dict(data: dict[str, Any]) -> Prefs:
     visa = data.get("visa") or {}
     seniority = data.get("seniority") or {}
     http = data.get("http") or {}
+    candidate = data.get("candidate") or {}
+    jobicy = data.get("jobicy") or {}
+    himalayas = data.get("himalayas") or {}
 
     arbeitnow_visa = arbeitnow.get("visa_sponsorship", None)
     if arbeitnow_visa is not None:
@@ -166,6 +176,14 @@ def prefs_from_dict(data: dict[str, Any]) -> Prefs:
         arbeitnow_max_pages=int(arbeitnow.get("max_pages", 2)),
         arbeitnow_visa_sponsorship=arbeitnow_visa,
         http_timeout_seconds=float(http.get("timeout_seconds", 30)),
+        candidate_based_in=str(candidate.get("based_in") or "").strip(),
+        candidate_needs_visa=bool(candidate.get("needs_visa", True)),
+        candidate_languages=[
+            s.lower() for s in _str_list(candidate.get("languages"))
+        ] or ["english"],
+        candidate_require_evidence=bool(candidate.get("require_visa_evidence", False)),
+        jobicy_max_pages=int(jobicy.get("max_pages", 1)),
+        himalayas_max_pages=int(himalayas.get("max_pages", 5)),
     )
 
 
